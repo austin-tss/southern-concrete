@@ -15,7 +15,7 @@ var ROLES = {
 
 /* Paste the Apps Script web app /exec URL after you deploy Code.gs.
    Leave this empty until then. No API keys live here. */
-var API_URL = '';
+var API_URL = 'https://script.google.com/macros/s/AKfycbz-NoJHojOq7xZz-iBWu78NrhX4J-pv-6q4BVrPVdx8A5h4CqG_vt3hY4ZE4dKq77Oq/exec';
 
 var CO = {
   name: 'Southern Concrete Coatings',
