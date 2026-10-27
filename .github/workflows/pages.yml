@@ -25,7 +25,7 @@ jobs:
       - name: Collect the static desk
         run: |
           mkdir -p _site
-          cp index.html config.js quote.js app.js logo.png .nojekyll _site/
+          cp index.html config.js quote.js gallery.js app.js logo.png .nojekyll _site/
       - uses: actions/configure-pages@v5
         with:
           enablement: true
