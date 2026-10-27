@@ -1,0 +1,9 @@
+name: Runner check
+on:
+  push:
+    branches: [cursor/southern-concrete-field-desk-63f7]
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo runner-ok
