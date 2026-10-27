@@ -494,6 +494,7 @@ function page_(body) {
 }
 function doGet(e) {
   var p = (e && e.parameter) || {};
+  if (p.a === 'logins') return out_({ ok: true, logins: load_('logins.json') });
   if (p.a === 'img' && p.id) {
     var b = DriveApp.getFileById(p.id).getBlob();
     return out_({ ok: true, data: 'data:' + b.getContentType() + ';base64,' + Utilities.base64Encode(b.getBytes()) });
@@ -534,6 +535,13 @@ function doPost(e) {
   L.waitLock(30000);
   var j, send = null, js;
   try {
+    if (d.a === 'signin') {
+      var lg = load_('logins.json');
+      lg.push({ t: new Date().toISOString(), role: String(d.role || ''), ua: String(d.ua || '').slice(0, 200) });
+      if (lg.length > 500) lg = lg.slice(-500);
+      save_(lg, 'logins.json');
+      return out_({ ok: true });
+    }
     js = load_();
     if (d.a === 'block' || d.a === 'unblock') {
       var bl = load_('blocks.json');
