@@ -159,3 +159,58 @@ test('pay and financing links appear only when settings allow them', () => {
   const small = Object.assign({}, base, { job: Object.assign({}, job, { total: 400, invoice: { amount: '$400.00' } }), settings: { payLink: '', finLink: 'https://finance.example/scc', finMin: 1000 } });
   assert.doesNotMatch(q.invoiceEmailHtml(small), /Pay over time/);
 });
+
+test('hardness and internal notes never reach a customer-facing render', () => {
+  const shared = {
+    id: 'SCC-1', est: 'SCC-EST-2026-0001', name: 'Pat Homeowner',
+    address: '1 Call St, Tallahassee, FL', email: 'pat@example.com',
+    sqft: 480, system: 'Garage floor flake system', color: 'Dominion',
+    prep: 'Diamond grinding', cure: '24 hours', rate: 6.5,
+    items: [{ title: 'Garage Floor Flake System', detail: '480 sq ft', price: 3120 }],
+    total: 3120, date: 'October 27, 2026',
+    crewNotes: 'Floor was clear.',
+    invoice: { amount: '$3,120.00', note: 'Payment due within 15 days.' },
+    response: { ans: 'A', label: 'Approved', text: 'Please call before noon', avail: 'Weekdays 8-12', when: 'Tuesday' }
+  };
+  function face(extra) {
+    return {
+      co, colors, testMode: false, testTo: TEST_TO, logoSrc: 'cid:logo',
+      settings: { reviewLink: 'https://g.page/r/example/review', payLink: 'https://pay.example/scc', finLink: '', finMin: 1000 },
+      link: (k) => 'https://script.example/?ans=' + k,
+      ans: 'A', action: 'https://script.example/exec',
+      labels: { A: 'Approved', B: 'Approved with changes', C: 'Declined', O: 'Question / other' },
+      slots: ['Weekdays 8-12', 'Weekdays 12-5', 'Weekends', 'Anytime'],
+      photosHtml: '<img alt="site">', beforeHtml: '<img alt="before">', afterHtml: '<img alt="after">',
+      job: Object.assign({}, shared, extra)
+    };
+  }
+  const dirty = {
+    hardness: 8,
+    hardnessHow: 'ZXHARD penny scratch on the north slab',
+    internalNotes: [{ t: '2026-10-27T18:04:00.000Z', text: 'ZXNOTE do not mention the failed scratch' }]
+  };
+  const other = { hardness: 3, hardnessHow: '', internalNotes: [] };
+  const fns = ['quoteEmailHtml', 'pdfHtml', 'recapEmailHtml', 'invoiceEmailHtml', 'responseFormHtml', 'responseThanksHtml', 'reviewEmailHtml'];
+  for (const name of fns) {
+    const left = q[name](face(dirty));
+    const right = q[name](face(other));
+    assert.equal(left, right, name + ' changed when the hardness value or internal notes changed');
+    assert.doesNotMatch(left, /ZXHARD/, name);
+    assert.doesNotMatch(left, /ZXNOTE/, name);
+    assert.doesNotMatch(left, /Mohs/i, name);
+    assert.doesNotMatch(left, /hardnessHow|internalNotes/, name);
+  }
+  const stripped = q.customerJob(Object.assign({}, shared, dirty));
+  assert.equal(stripped.hardness, undefined);
+  assert.equal(stripped.hardnessHow, undefined);
+  assert.equal(stripped.internalNotes, undefined);
+  assert.equal(stripped.crewNotes, 'Floor was clear.');
+  assert.match(q.quoteEmailHtml(face(dirty)), /A\) Approve/);
+  assert.match(q.pdfHtml(face(dirty)), /Dominion/);
+  assert.match(q.recapEmailHtml(face(dirty)), /Floor was clear/);
+  assert.match(q.invoiceEmailHtml(face(dirty)), /\$3,120\.00/);
+  assert.match(q.responseFormHtml(face(dirty)), /When can the crew have the floor/);
+  assert.match(q.responseThanksHtml(face(dirty)), /Please call before noon/);
+  assert.match(q.reviewEmailHtml(face(dirty)), /Leave a review/);
+  assert.doesNotMatch(q.responseThanksHtml(face(dirty)), /ZXNOTE/);
+});

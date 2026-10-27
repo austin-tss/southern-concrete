@@ -29,6 +29,13 @@ function moneyNum(v) {
   const n = parseFloat(String(v == null ? '' : v).replace(/[^0-9.\-]/g, ''));
   return Number.isNaN(n) ? 0 : n;
 }
+function hardnessVal(v) {
+  if (v == null || String(v).trim() === '') return '';
+  const n = Number(v);
+  if (n !== Math.floor(n) || n < 1 || n > 10) return null;
+  return n;
+}
+function seed(job) { jobs.unshift(job); return job; }
 
 function envelope(job) {
   const env = q.deliveryAddress(TEST_MODE, TEST_TO, job && job.email, CO.email);
@@ -118,6 +125,7 @@ function handle(d) {
   if (d.a === 'create') {
     if (d.email && !q.validEmail(d.email)) return { ok: false, err: 'That customer email does not look valid.' };
     if (!TEST_MODE && !q.validEmail(d.email)) return { ok: false, err: 'Enter a valid customer email before sending.' };
+    if (hardnessVal(d.hardness) === null) return { ok: false, err: 'Hardness is a whole number from 1 to 10.' };
     const fields = { sqft: d.sqft, system: d.system, color: d.color, prep: d.prep, cure: d.cure, rate: d.rate };
     const items = (d.items && d.items.length) ? d.items : q.buildItems(fields, d.quote);
     const j = {
@@ -126,6 +134,7 @@ function handle(d) {
       name: d.name, address: d.address, email: String(d.email || '').trim(), phone: String(d.phone || '').trim(),
       quote: d.quote || '', sqft: numField(d.sqft), system: d.system || '', color: d.color || '',
       prep: d.prep || '', cure: d.cure || '', rate: numField(d.rate),
+      hardness: hardnessVal(d.hardness), hardnessHow: String(d.hardnessHow || '').trim().slice(0, 300), internalNotes: [],
       items, total: q.totalOf(items), status: 'sent', created: new Date().toISOString(),
       photos: storePhotos(d.photos, 'quote'), crew: [],
       folder: 'https://drive.google.com/drive/folders/scc-project-' + seq,
@@ -166,7 +175,18 @@ function handle(d) {
     if (!q.validEmail(d.email)) return { ok: false, err: 'Invalid email' };
     j.email = String(d.email).trim();
   } else if (d.a === 'respond') respond(j, d);
-  else if (d.a === 'markpaid') {
+  else if (d.a === 'hardness') {
+    const hv = hardnessVal(d.hardness);
+    if (hv === null) return { ok: false, err: 'Hardness is a whole number from 1 to 10.' };
+    j.hardness = hv;
+    j.hardnessHow = String(d.hardnessHow || '').trim().slice(0, 300);
+  } else if (d.a === 'inote') {
+    const noteText = String(d.text || '').trim();
+    if (!noteText) return { ok: false, err: 'Write a note first' };
+    if (!Array.isArray(j.internalNotes)) j.internalNotes = [];
+    j.internalNotes.push({ t: new Date().toISOString(), text: noteText.slice(0, 2000) });
+    if (j.internalNotes.length > 200) j.internalNotes = j.internalNotes.slice(-200);
+  } else if (d.a === 'markpaid') {
     j.invoice = j.invoice || {};
     j.invoice.paid = true;
     j.invoice.paidAt = new Date().toISOString();
@@ -259,4 +279,4 @@ if (process.argv[1] && process.argv[1].endsWith('mock-server.mjs')) {
   start(port).then(() => console.log('mock http://127.0.0.1:' + port + '/?api=http://127.0.0.1:' + port + '/exec'));
 }
 
-export { start, inbox };
+export { start, inbox, seed };

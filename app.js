@@ -5,6 +5,7 @@ if (API) localStorage.sccApi = API;
 let blocks = [], role = sessionStorage.sccRole || '', jobs = [], root = '', cur = null, pin = '', photos = [];
 let serverTest = null, view = '', SET = {}, EXP = [], EXPL = false, EXPLOAD = false, PAYING = '', PAYM = 'check', CK = '', CQ = '', CL = [], SQ = '', tab = 'est';
 let RC = null, RCT = 0, RQ = [];
+let jtab = 'job', jtabFor = null;
 const $ = (s) => document.querySelector(s);
 const A = $('#app');
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -390,6 +391,7 @@ function hl() {
 }
 function home() {
   cur = null;
+  jtabFor = null;
   view = '';
   CK = '';
   G = { est: [], jobs: [], done: [] };
@@ -527,6 +529,10 @@ ${acc('qc', 'Customer details', 'Tap to enter name, address, email', `<label>Cus
 <label>Cure / return to service</label><select id="cure"><option value="">Choose</option>${CURES.map((s) => `<option>${esc(s)}</option>`).join('')}</select>
 <label>Price per sq ft</label><input id="rate" inputmode="decimal" placeholder="6.50" oninput="livePrice()">
 <p id="liveprice"></p>
+<label>Concrete hardness (Mohs 1–10)</label><select id="hard" onchange="hardHint()">${hardOpts('')}</select>
+<label>How it was measured (optional)</label><input id="hardhow" autocomplete="off" placeholder="Penny scratch on the garage apron">
+<p class="muted" id="hardhint"></p>
+<p class="muted">Internal only. Hardness stays off the customer estimate, invoice, PDF, and emails.</p>
 <input type="file" id="pf" accept="image/*" capture="environment" multiple hidden onchange="pick(this,showP)"><button class="btn d" type="button" onclick="$('#pf').click()">📷 Take photo</button>
 ${acc('qp', 'Photo attachments (0)', 'No photos yet', '<div id="pp"></div>')}
 <label>Notes (talk or type)</label><textarea id="qt" rows="5" placeholder="480 sq ft two-car garage, full flake in Dominion, grind and crack repair, $6.50 a sq ft, back in 24 hours"></textarea>
@@ -537,6 +543,7 @@ ${acc('qp', 'Photo attachments (0)', 'No photos yet', '<div id="pp"></div>')}
   mic('mb', 'qt');
   addrAC('ad', cs);
   livePrice();
+  hardHint();
   if (pre && typeof pre === 'object') {
     $('#nm').value = pre.name || '';
     $('#ad').value = pre.address || '';
@@ -591,6 +598,7 @@ async function sendQ() {
   const d = {
     a: 'create', name: $('#nm').value.trim(), address: $('#ad').value.trim(), email: $('#em').value.trim(), phone: ($('#ph') ? $('#ph').value.trim() : ''),
     quote: $('#qt').value, sqft: f.sqft, system: f.system, color: f.color, prep: f.prep, cure: f.cure, rate: f.rate,
+    hardness: $('#hard') ? $('#hard').value : '', hardnessHow: $('#hardhow') ? $('#hardhow').value.trim() : '',
     items: IT.filter((i) => i.title && i.title.trim()), photos
   };
   if (!d.name) return toast('Add the customer name');
@@ -639,11 +647,56 @@ async function done(id) {
 function resendBtn(j, primary) {
   return j.est ? `<button class="btn ${primary ? 'd' : 'gr'}" id="rs" type="button" onclick="resend('${j.id}')">✉ Resend quote (A/B/C/Other) + PDF</button>` : '';
 }
+function hardnessHint(n) {
+  n = Number(n);
+  if (!(n >= 1 && n <= 10)) return '';
+  if (n <= 2) return 'Very soft or dusty. Grind back to sound concrete before coating. Do not coat a crumbling surface.';
+  if (n <= 4) return 'Soft. Plan extra grind passes so the coating has a profile to grab.';
+  if (n <= 6) return 'Typical cured concrete. A standard diamond grind is usually enough.';
+  if (n <= 8) return 'Hard, dense, or power-troweled. Use a coarser diamond so the coating can bond.';
+  return 'Extremely hard. Confirm the scratch is in the paste, not a piece of rock. A surface this hard needs an aggressive profile.';
+}
+function hardOpts(cur) {
+  let h = '<option value="">Not tested</option>';
+  for (let i = 1; i <= 10; i++) h += `<option value="${i}"${String(cur) === String(i) ? ' selected' : ''}>${i}</option>`;
+  return h;
+}
+function hardHint() {
+  const el = $('#hardhint');
+  if (!el) return;
+  const t = hardnessHint($('#hard') && $('#hard').value);
+  el.textContent = t || 'Leave this blank if you have not scratched the slab yet.';
+}
+function noteWhen(t) {
+  try {
+    return new Date(t).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+  } catch (e) { return String(t || ''); }
+}
+function jobTabs(j) {
+  const n = (j.internalNotes || []).length;
+  return `<div class="tabs"><button type="button" class="${jtab === 'job' ? 'on' : ''}" onclick="jtab='job';jview('${j.id}')">Job</button><button type="button" class="${jtab === 'notes' ? 'on' : ''}" onclick="jtab='notes';jview('${j.id}')">Notes<span class="cnt">${n}</span></button></div>`;
+}
+function hardCard(j) {
+  const hv = j.hardness === 0 || j.hardness ? j.hardness : '';
+  return `<div class="card"><h2>Concrete hardness</h2><p class="muted" style="margin-top:0">Mohs scratch test, 1 to 10. Internal only. This is never printed on the estimate, invoice, PDF, or any customer email.</p>
+<label>Mohs value</label><select id="hard" onchange="hardHint()">${hardOpts(hv)}</select>
+<label>How it was measured (optional)</label><input id="hardhow" autocomplete="off" value="${esc(j.hardnessHow || '')}" placeholder="Penny scratch on the garage apron">
+<p class="muted" id="hardhint"></p>
+<button class="btn n" id="hardsave" type="button" onclick="saveHard('${j.id}')">Save hardness</button></div>`;
+}
+function notesPane(j) {
+  const list = (j.internalNotes || []).slice().reverse();
+  const rows = list.length ? list.map((n) => `<div class="line"><b>${esc(noteWhen(n.t))}</b><br>${esc(n.text)}</div>`).join('') : '<p class="muted">No internal notes yet.</p>';
+  return `<div class="card"><h2>Internal notes</h2><p class="muted" style="margin-top:0">A running log for the crew. Customers never see these notes.</p>
+${rows}<label>Add a note</label><textarea id="inote" rows="4" placeholder="What should the next person know?"></textarea>
+<button class="btn huge" id="addnote" type="button" onclick="addNote('${j.id}')">Add note</button></div>`;
+}
 function jview(id) {
   GAL = [];
   cur = id;
   const j = jobs.find((x) => x.id === id);
   if (!j) { cur = null; return render(); }
+  if (jtabFor !== id) { jtab = 'job'; jtabFor = id; }
   const st = j.status;
   const v = j.invoice || {};
   const paid = !!v.paid;
@@ -659,6 +712,14 @@ ${specLine ? '<p style="font-size:18px">' + esc(specLine) + '</p>' : ''}
 <p><span class="badge" style="background:${SC[stat(j)] || '#8a8f98'}">${ST[stat(j)] || esc(j.status)}</span> ${cfBadge(j)}${j.invoice ? ` <span class="badge ${paid ? 'paid' : 'open'}">${paid ? 'PAID' : 'OPEN'}</span>` : ''}</p>
 ${av(j) ? '<p style="font-size:17px">🕒 <b>Customer prefers:</b> ' + esc(av(j)) + '</p>' : ''}
 ${TEST_MODE ? `<p class="muted">Test mode: emails go only to ${esc(TEST_TO)}</p>` : ''}</div>`;
+  h += jobTabs(j);
+  if (jtab === 'notes') {
+    h += notesPane(j);
+    h += `<button class="btn gr" type="button" onclick="cur=null;render()">${view === 'cust' ? '← Back to customer' : '← All projects'}</button>`;
+    A.innerHTML = h;
+    return;
+  }
+  h += hardCard(j);
   h += acc(K('jd'), 'Job details', (j.est || 'Quote') + ' · ' + (j.email || 'no email'), `${j.est ? '<p class="muted">' + esc(j.est) + (j.pdf ? ` · <a href="${esc(j.pdf)}" target="_blank" rel="noopener">PDF</a>` : '') + '</p>' : ''}<p>📧 ${esc(j.email) || '<b style="color:#b91c1c">No email on job</b>'} <a href="#" onclick="fixEmail('${id}');return false">edit</a></p><p>📞 ${j.phone ? `<a href="tel:${telH(j.phone)}">${esc(fmtPh(j.phone))}</a>` : 'No phone'} <a href="#" onclick="editPhone(['${id}']);return false">${j.phone ? 'edit' : 'add'}</a></p>${j.response ? '<p><b>Customer answer:</b> ' + esc(j.response.label) + (j.response.text ? ' — ' + esc(j.response.text) : '') + '</p>' : ''}${av(j) ? '<p><b>Availability:</b> ' + esc(av(j)) + '</p>' : ''}${specHtml(j)}${j.notes ? '<p>' + esc(j.notes) + '</p>' : ''}${j.crewNotes ? '<p><b>Job notes:</b> ' + esc(j.crewNotes) + '</p>' : ''}${j.folder ? `<p><a href="${esc(j.folder)}" target="_blank" rel="noopener">Project photos in Drive</a></p>` : ''}`);
   h += acc(K('li'), 'Line items (' + li + ')', tot ? tot + ' total' : 'Scope and price', items(j));
   if (np && st !== 'approved') h += acc(K('ph'), 'Photos (' + np + ')', 'Quote ' + (j.photos || []).length + ' · Before/After ' + (j.crew || []).length, ((j.photos || []).length ? '<label>Quote photos</label>' + imgs(j.photos) : '') + ((j.crew || []).length ? '<label>Before / After</label>' + imgs(j.crew) : ''));
@@ -681,7 +742,37 @@ ${acc(K('jn'), 'Job notes', j.crewNotes ? esc(String(j.crewNotes).slice(0, 60)) 
   if ((st === 'approved' || st === 'complete' || st === 'invoiced') && j.est) h += `<div class="card">${resendBtn(j, false)}</div>`;
   h += `<button class="btn gr" type="button" onclick="cur=null;render()">${view === 'cust' ? '← Back to customer' : '← All projects'}</button>`;
   A.innerHTML = h;
+  hardHint();
   if (st === 'approved') mic('cm', 'cn');
+}
+async function saveHard(id) {
+  const b = $('#hardsave');
+  if (b) { b.disabled = true; b.textContent = 'Saving…'; }
+  try {
+    await api({ a: 'hardness', id, hardness: $('#hard').value, hardnessHow: $('#hardhow').value });
+    await refresh();
+    jview(id);
+    toast('Hardness saved');
+  } catch (e) {
+    toast(e.message);
+    if (b) { b.disabled = false; b.textContent = 'Save hardness'; }
+  }
+}
+async function addNote(id) {
+  const text = ($('#inote') && $('#inote').value || '').trim();
+  if (!text) return toast('Write a note first');
+  const b = $('#addnote');
+  if (b) { b.disabled = true; b.textContent = 'Saving…'; }
+  jtab = 'notes';
+  try {
+    await api({ a: 'inote', id, text });
+    await refresh();
+    jview(id);
+    toast('Note saved');
+  } catch (e) {
+    toast(e.message);
+    if (b) { b.disabled = false; b.textContent = 'Add note'; }
+  }
 }
 async function resend(id) {
   if (!confirm(TEST_MODE ? 'Resend the quote email? Test mode sends it only to ' + TEST_TO + '.' : 'Resend the quote email to the customer?')) return;

@@ -178,6 +178,19 @@ function escHtml(s){
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];
   });
 }
+/* Owner-only fields. Never copy these into a customer email, PDF, or answer page. */
+function customerJob(j){
+  var o;
+  try { o = JSON.parse(JSON.stringify(j||{})); } catch (e) { o = {}; }
+  delete o.hardness;
+  delete o.hardnessHow;
+  delete o.internalNotes;
+  return o;
+}
+function customerFace(o){
+  o = o || {};
+  return Object.assign({}, o, { job: customerJob(o.job) });
+}
 function specRows(j){
   var rows=[
     ['Square footage',j.sqft?formatSq(j.sqft)+' sq ft':''],
@@ -256,6 +269,7 @@ function payButtons(o){
   return html?'<div style="margin:16px 0">'+html+'</div>':'';
 }
 function quoteEmailHtml(o){
+  o=customerFace(o);
   var j=o.job,g=o.colors.g,dg=o.colors.dg,n=o.colors.n;
   function btn(k,t,c){
     return '<a href="'+o.link(k)+'" style="display:block;margin:8px 0;padding:15px;background:'+c+';color:#fff;text-decoration:none;border-radius:10px;font-weight:bold;font-size:16px;text-align:center">'+t+'</a>';
@@ -276,6 +290,7 @@ function quoteEmailHtml(o){
   return emailShell(Object.assign({},o,{title:'Estimate',sub:j.est}),inner);
 }
 function pdfHtml(o){
+  o=customerFace(o);
   var j=o.job;
   var inner=metaBlock(j,'Estimate #',j.est,o.colors)+specRows(j)+itemsTable(j,o.colors)+
     '<h3 style="color:'+o.colors.n+';margin:22px 0 6px;font-size:15px">Terms</h3><ul style="font-size:13px;color:#33383d;line-height:1.6;padding-left:18px">'+
@@ -286,6 +301,7 @@ function pdfHtml(o){
     emailShell(Object.assign({},o,{title:'Estimate',sub:j.est,testMode:false}),inner)+'</body></html>';
 }
 function recapEmailHtml(o){
+  o=customerFace(o);
   var j=o.job,n=o.colors.n,dg=o.colors.dg,g=o.colors.g;
   var av=[j.response&&j.response.avail,j.response&&j.response.when].filter(Boolean).join(' - ');
   var referHref='mailto:?subject='+encodeURIComponent('Floor coating I recommend: Southern Concrete Coatings')+
@@ -302,6 +318,7 @@ function recapEmailHtml(o){
   return emailShell(Object.assign({},o,{title:'Your floor is done',sub:j.est||''}),inner);
 }
 function invoiceEmailHtml(o){
+  o=customerFace(o);
   var j=o.job,v=j.invoice||{},inv=String(j.est||j.id).replace('EST','INV');
   var inner='<p style="font-size:16px">Dear '+escHtml(j.name)+',</p>'+
     '<p>Thank you for your business. Here is the invoice for the completed coating.</p>'+
@@ -313,6 +330,7 @@ function invoiceEmailHtml(o){
   return emailShell(Object.assign({},o,{title:'Invoice',sub:inv}),inner);
 }
 function responseFormHtml(o){
+  o=customerFace(o);
   var j=o.job,ans=o.ans,labels=o.labels,slots=o.slots,action=o.action;
   var slotHtml=slots.map(function(s,i){
     return '<label style="display:block;width:100%;margin:8px 0;padding:18px;font-size:19px;font-weight:bold;border:3px solid '+o.colors.n+';background:#fff;color:'+o.colors.n+';border-radius:12px;text-align:center;box-sizing:border-box"><input type="radio" name="avail" value="'+escHtml(s)+'"'+(i===slots.length-1?' checked':'')+' style="margin-right:8px">'+escHtml(s)+'</label>';
@@ -326,13 +344,32 @@ function responseFormHtml(o){
     '<p><b>Preferred date or time (optional)</b></p><input type="text" name="when" placeholder="e.g. Tuesday morning" style="width:100%;box-sizing:border-box;font-size:17px;padding:14px;border:2px solid #cfd3de;border-radius:10px">'+
     '<button style="width:100%;padding:20px;font-size:21px;font-weight:bold;background:'+o.colors.g+';color:#fff;border:0;border-radius:12px;margin-top:14px">Send my answer</button></form>';
 }
+function responseThanksHtml(o){
+  o=customerFace(o);
+  var j=o.job||{}, r=j.response||{};
+  var av=[r.avail,r.when].filter(Boolean).join(' - ');
+  return '<h2 style="color:'+o.colors.dg+'">Thank you</h2><p style="font-size:17px">Your answer was received: <b>'+escHtml(r.label||'')+'</b></p>'+
+    (av?'<p>Preferred time: <b>'+escHtml(av)+'</b></p>':'')+
+    (r.text?'<p>Your note: '+escHtml(r.text)+'</p>':'')+
+    '<p>We will confirm the installation window. Questions? Call '+escHtml(o.co.phone)+'.</p>';
+}
+function reviewEmailHtml(o){
+  o=customerFace(o);
+  var j=o.job||{}, link=(o.settings&&o.settings.reviewLink)||'';
+  var btn=link?'<a href="'+escHtml(link)+'" style="display:block;margin:16px 0;padding:15px;background:'+o.colors.g+';color:#fff;text-decoration:none;border-radius:10px;font-weight:bold;font-size:16px;text-align:center">Leave a review</a>':'';
+  var inner='<p style="font-size:16px">Hi '+escHtml(j.name)+',</p>'+
+    '<p style="line-height:1.6">Thank you for choosing Southern Concrete Coatings. If you were happy with the floor, a short Google review helps neighbors find us.</p>'+
+    btn+'<p>Questions? Call '+escHtml(o.co.phone)+'.</p>';
+  return emailShell(Object.assign({},o,{title:'How did we do?',sub:j.est||''}),inner);
+}
 
 var SCCQuote={
   round2:round2,money:money,validEmail:validEmail,formatSq:formatSq,
   deliveryAddress:deliveryAddress,rewriteQuote:rewriteQuote,buildItems:buildItems,totalOf:totalOf,
   parseSqft:parseSqft,parseRate:parseRate,parseLump:parseLump,
   quoteEmailHtml:quoteEmailHtml,pdfHtml:pdfHtml,recapEmailHtml:recapEmailHtml,invoiceEmailHtml:invoiceEmailHtml,
-  responseFormHtml:responseFormHtml,TERMS:TERMS,escHtml:escHtml
+  responseFormHtml:responseFormHtml,responseThanksHtml:responseThanksHtml,reviewEmailHtml:reviewEmailHtml,
+  customerJob:customerJob,TERMS:TERMS,escHtml:escHtml
 };
 if(typeof module!=='undefined'&&module.exports)module.exports=SCCQuote;
 
@@ -398,6 +435,9 @@ function today_() { return Utilities.formatDate(new Date(), 'America/New_York', 
 function view_(j) {
   var o = JSON.parse(JSON.stringify(j));
   o.date = today_();
+  delete o.hardness;
+  delete o.hardnessHow;
+  delete o.internalNotes;
   return o;
 }
 function logoBlob_() {
@@ -531,6 +571,12 @@ function moneyNum_(v) {
   var n = parseFloat(String(v == null ? '' : v).replace(/[^0-9.\-]/g, ''));
   return isNaN(n) ? 0 : n;
 }
+function hardnessVal_(v) {
+  if (v == null || String(v).trim() === '') return '';
+  var n = Number(v);
+  if (n !== Math.floor(n) || n < 1 || n > 10) return null;
+  return n;
+}
 function expenses_() {
   var list = load_('expenses.json');
   return Array.isArray(list) ? list : [];
@@ -551,16 +597,11 @@ function blankScan_(id) {
 }
 function sendReview_(j) {
   customerOk_(j);
-  var s = settings_();
-  if (!s.reviewLink) throw new Error('Add a Google review link in Settings first.');
-  var html = '<p style="font-size:16px">Hi ' + escHtml(j.name) + ',</p>' +
-    '<p style="line-height:1.6">Thank you for choosing Southern Concrete Coatings. If you were happy with the floor, a short Google review helps neighbors find us.</p>' +
-    '<a href="' + escHtml(s.reviewLink) + '" style="display:block;margin:16px 0;padding:15px;background:' + COLORS.g + ';color:#fff;text-decoration:none;border-radius:10px;font-weight:bold;font-size:16px;text-align:center">Leave a review</a>' +
-    '<p>Questions? Call ' + escHtml(CO.phone) + '.</p>';
+  if (!settings_().reviewLink) throw new Error('Add a Google review link in Settings first.');
   sendMail_({
     job: j,
     subject: 'How did we do? Southern Concrete Coatings',
-    html: emailShell({ co: CO, colors: COLORS, job: view_(j), testMode: TEST_MODE, testTo: TEST_TO, logoSrc: 'cid:logo', title: 'How did we do?', sub: j.est || '' }, html),
+    html: reviewEmailHtml(mailOpts_(j)),
     inlineImages: { logo: logoBlob_() }
   });
 }
@@ -588,11 +629,7 @@ function doGet(e) {
       respond_(j, p);
       save_(js);
     } finally { L.releaseLock(); }
-    var av = [j.response.avail, j.response.when].filter(Boolean).join(' - ');
-    return page_('<h2 style="color:' + COLORS.dg + '">Thank you</h2><p style="font-size:17px">Your answer was received: <b>' + escHtml(j.response.label) + '</b></p>' +
-      (av ? '<p>Preferred time: <b>' + escHtml(av) + '</b></p>' : '') +
-      (j.response.text ? '<p>Your note: ' + escHtml(j.response.text) + '</p>' : '') +
-      '<p>We will confirm the installation window. Questions? Call ' + CO.phone + '.</p>');
+    return page_(responseThanksHtml({ co: CO, colors: COLORS, job: j }));
   }
   return out_({ ok: true, test: TEST_MODE, testMode: TEST_MODE, testTo: TEST_MODE ? TEST_TO : '', root: root_().getUrl(), jobs: load_(), blocks: load_('blocks.json'), settings: settings_() });
 }
@@ -698,6 +735,7 @@ function doPost(e) {
     if (d.a === 'create') {
       if (d.email && !validEmail(d.email)) return out_({ ok: false, err: 'That customer email does not look valid.' });
       if (!TEST_MODE && !validEmail(d.email)) return out_({ ok: false, err: 'Enter a valid customer email before sending.' });
+      if (hardnessVal_(d.hardness) === null) return out_({ ok: false, err: 'Hardness is a whole number from 1 to 10.' });
       var fields = { sqft: d.sqft, system: d.system, color: d.color, prep: d.prep, cure: d.cure, rate: d.rate };
       var items = (d.items && d.items.length) ? d.items : buildItems(fields, d.quote);
       j = {
@@ -714,6 +752,9 @@ function doPost(e) {
         prep: d.prep || '',
         cure: d.cure || '',
         rate: numField_(d.rate),
+        hardness: hardnessVal_(d.hardness),
+        hardnessHow: String(d.hardnessHow || '').trim().slice(0, 300),
+        internalNotes: [],
         items: items,
         total: totalOf(items),
         status: 'sent',
@@ -746,7 +787,18 @@ function doPost(e) {
         if (!validEmail(d.email)) return out_({ ok: false, err: 'Invalid email' });
         j.email = String(d.email).trim();
       } else if (d.a === 'respond') respond_(j, d);
-      else if (d.a === 'resend' || d.a === 'resendquote') {
+      else if (d.a === 'hardness') {
+        var hv = hardnessVal_(d.hardness);
+        if (hv === null) return out_({ ok: false, err: 'Hardness is a whole number from 1 to 10.' });
+        j.hardness = hv;
+        j.hardnessHow = String(d.hardnessHow || '').trim().slice(0, 300);
+      } else if (d.a === 'inote') {
+        var noteText = String(d.text || '').trim();
+        if (!noteText) return out_({ ok: false, err: 'Write a note first' });
+        if (!Array.isArray(j.internalNotes)) j.internalNotes = [];
+        j.internalNotes.push({ t: new Date().toISOString(), text: noteText.slice(0, 2000) });
+        if (j.internalNotes.length > 200) j.internalNotes = j.internalNotes.slice(-200);
+      } else if (d.a === 'resend' || d.a === 'resendquote') {
         if (!j.est) return out_({ ok: false, err: 'This job has no quote to resend' });
         send = sendQuote_;
         j.resent = (j.resent || 0) + 1;

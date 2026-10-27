@@ -60,6 +60,9 @@ function today_() { return Utilities.formatDate(new Date(), 'America/New_York', 
 function view_(j) {
   var o = JSON.parse(JSON.stringify(j));
   o.date = today_();
+  delete o.hardness;
+  delete o.hardnessHow;
+  delete o.internalNotes;
   return o;
 }
 function logoBlob_() {
@@ -193,6 +196,12 @@ function moneyNum_(v) {
   var n = parseFloat(String(v == null ? '' : v).replace(/[^0-9.\-]/g, ''));
   return isNaN(n) ? 0 : n;
 }
+function hardnessVal_(v) {
+  if (v == null || String(v).trim() === '') return '';
+  var n = Number(v);
+  if (n !== Math.floor(n) || n < 1 || n > 10) return null;
+  return n;
+}
 function expenses_() {
   var list = load_('expenses.json');
   return Array.isArray(list) ? list : [];
@@ -213,16 +222,11 @@ function blankScan_(id) {
 }
 function sendReview_(j) {
   customerOk_(j);
-  var s = settings_();
-  if (!s.reviewLink) throw new Error('Add a Google review link in Settings first.');
-  var html = '<p style="font-size:16px">Hi ' + escHtml(j.name) + ',</p>' +
-    '<p style="line-height:1.6">Thank you for choosing Southern Concrete Coatings. If you were happy with the floor, a short Google review helps neighbors find us.</p>' +
-    '<a href="' + escHtml(s.reviewLink) + '" style="display:block;margin:16px 0;padding:15px;background:' + COLORS.g + ';color:#fff;text-decoration:none;border-radius:10px;font-weight:bold;font-size:16px;text-align:center">Leave a review</a>' +
-    '<p>Questions? Call ' + escHtml(CO.phone) + '.</p>';
+  if (!settings_().reviewLink) throw new Error('Add a Google review link in Settings first.');
   sendMail_({
     job: j,
     subject: 'How did we do? Southern Concrete Coatings',
-    html: emailShell({ co: CO, colors: COLORS, job: view_(j), testMode: TEST_MODE, testTo: TEST_TO, logoSrc: 'cid:logo', title: 'How did we do?', sub: j.est || '' }, html),
+    html: reviewEmailHtml(mailOpts_(j)),
     inlineImages: { logo: logoBlob_() }
   });
 }
@@ -250,11 +254,7 @@ function doGet(e) {
       respond_(j, p);
       save_(js);
     } finally { L.releaseLock(); }
-    var av = [j.response.avail, j.response.when].filter(Boolean).join(' - ');
-    return page_('<h2 style="color:' + COLORS.dg + '">Thank you</h2><p style="font-size:17px">Your answer was received: <b>' + escHtml(j.response.label) + '</b></p>' +
-      (av ? '<p>Preferred time: <b>' + escHtml(av) + '</b></p>' : '') +
-      (j.response.text ? '<p>Your note: ' + escHtml(j.response.text) + '</p>' : '') +
-      '<p>We will confirm the installation window. Questions? Call ' + CO.phone + '.</p>');
+    return page_(responseThanksHtml({ co: CO, colors: COLORS, job: j }));
   }
   return out_({ ok: true, test: TEST_MODE, testMode: TEST_MODE, testTo: TEST_MODE ? TEST_TO : '', root: root_().getUrl(), jobs: load_(), blocks: load_('blocks.json'), settings: settings_() });
 }
@@ -360,6 +360,7 @@ function doPost(e) {
     if (d.a === 'create') {
       if (d.email && !validEmail(d.email)) return out_({ ok: false, err: 'That customer email does not look valid.' });
       if (!TEST_MODE && !validEmail(d.email)) return out_({ ok: false, err: 'Enter a valid customer email before sending.' });
+      if (hardnessVal_(d.hardness) === null) return out_({ ok: false, err: 'Hardness is a whole number from 1 to 10.' });
       var fields = { sqft: d.sqft, system: d.system, color: d.color, prep: d.prep, cure: d.cure, rate: d.rate };
       var items = (d.items && d.items.length) ? d.items : buildItems(fields, d.quote);
       j = {
@@ -376,6 +377,9 @@ function doPost(e) {
         prep: d.prep || '',
         cure: d.cure || '',
         rate: numField_(d.rate),
+        hardness: hardnessVal_(d.hardness),
+        hardnessHow: String(d.hardnessHow || '').trim().slice(0, 300),
+        internalNotes: [],
         items: items,
         total: totalOf(items),
         status: 'sent',
@@ -408,7 +412,18 @@ function doPost(e) {
         if (!validEmail(d.email)) return out_({ ok: false, err: 'Invalid email' });
         j.email = String(d.email).trim();
       } else if (d.a === 'respond') respond_(j, d);
-      else if (d.a === 'resend' || d.a === 'resendquote') {
+      else if (d.a === 'hardness') {
+        var hv = hardnessVal_(d.hardness);
+        if (hv === null) return out_({ ok: false, err: 'Hardness is a whole number from 1 to 10.' });
+        j.hardness = hv;
+        j.hardnessHow = String(d.hardnessHow || '').trim().slice(0, 300);
+      } else if (d.a === 'inote') {
+        var noteText = String(d.text || '').trim();
+        if (!noteText) return out_({ ok: false, err: 'Write a note first' });
+        if (!Array.isArray(j.internalNotes)) j.internalNotes = [];
+        j.internalNotes.push({ t: new Date().toISOString(), text: noteText.slice(0, 2000) });
+        if (j.internalNotes.length > 200) j.internalNotes = j.internalNotes.slice(-200);
+      } else if (d.a === 'resend' || d.a === 'resendquote') {
         if (!j.est) return out_({ ok: false, err: 'This job has no quote to resend' });
         send = sendQuote_;
         j.resent = (j.resent || 0) + 1;
