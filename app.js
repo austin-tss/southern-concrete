@@ -172,6 +172,7 @@ function key(k) {
   if (pin.length === 4) {
     if (ROLES[pin]) {
       role = sessionStorage.sccRole = ROLES[pin];
+      try { api({ a: 'signin', role: role, ua: navigator.userAgent }).catch(function(){}); } catch (e) {}
       A.innerHTML = '<div class="card">Loading…</div>';
       refresh().then(render);
     } else {
