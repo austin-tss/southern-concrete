@@ -20,6 +20,7 @@ const blocks = [];
 const inbox = [];
 const expenses = [];
 const receipts = new Map();
+const gallery = [];
 let settings = { payLink: '', reviewLink: '', finLink: '', finMin: 1000, ocr: false };
 let seq = 1;
 let rcSeq = 1;
@@ -63,6 +64,25 @@ function respond(j, p) {
 }
 function handle(d) {
   if (d.a === 'signin' || d.a === 'log') return { ok: true };
+  if (d.a === 'gadd') {
+    const parts = String(d.image || '').split(',');
+    if (parts.length < 2 || !parts[1]) return { ok: false, err: 'Choose a photo first' };
+    const tags = String(d.tags || '').split(',').map((s) => s.trim().slice(0, 40)).filter(Boolean).slice(0, 12);
+    const item = {
+      id: 'GAL' + (seq++),
+      caption: String(d.caption || '').trim().slice(0, 200),
+      tags,
+      t: new Date().toISOString(),
+      url: d.image
+    };
+    gallery.unshift(item);
+    return { ok: true, gallery };
+  }
+  if (d.a === 'gdel') {
+    const i = gallery.findIndex((x) => x.id === d.id);
+    if (i >= 0) gallery.splice(i, 1);
+    return { ok: true, gallery };
+  }
   if (['settings', 'explist', 'expadd', 'expdel', 'rcscan', 'rcrescan', 'rcdrop'].includes(d.a)) {
     if (!pinOk(d)) return { ok: false, err: 'Wrong PIN' };
     if (d.a === 'settings') {
@@ -259,7 +279,7 @@ function start(port) {
         return;
       }
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: true, test: TEST_MODE, testMode: TEST_MODE, testTo: TEST_TO, root: 'https://drive.google.com/drive/folders/scc-root', jobs, blocks, settings }));
+      res.end(JSON.stringify({ ok: true, test: TEST_MODE, testMode: TEST_MODE, testTo: TEST_TO, root: 'https://drive.google.com/drive/folders/scc-root', jobs, blocks, settings, gallery }));
       return;
     }
     let rel = decodeURIComponent(url.pathname);

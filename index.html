@@ -90,6 +90,14 @@ a{color:var(--dg)}
 @keyframes sp{to{transform:rotate(360deg)}}
 .rpv{display:block;width:100%;max-height:220px;object-fit:contain;border-radius:14px;background:#eef0f4}
 .rth{width:60px;height:60px;object-fit:cover;border-radius:10px;background:#eef0f4;flex:0 0 60px}
+.ggrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.ggrid button{display:block;padding:0;border:0;background:#fff;border-radius:16px;overflow:hidden;text-align:left;color:var(--n);box-shadow:0 1px 2px rgba(58,65,92,.05),0 4px 12px rgba(58,65,92,.04);cursor:pointer}
+.ggrid img{width:100%;aspect-ratio:1;object-fit:cover;display:block;background:#e8eaf0}
+.ggrid span{display:block;padding:10px 12px 14px;font-weight:700;font-size:16px}
+#gv{position:fixed;inset:0;z-index:40;background:#f4f5f7;display:flex;flex-direction:column;padding:12px 14px 18px}
+#gv[hidden]{display:none}
+#gv img{flex:1;min-height:0;width:100%;object-fit:contain;background:#fff;border-radius:16px}
+#gv h2{margin:10px 0 0;font-size:24px}
 </style>
 </head>
 <body>
@@ -102,6 +110,7 @@ a{color:var(--dg)}
 <div id="rq"></div>
 <div class="wrap" id="app"></div>
 <div id="toast"></div>
+<div id="gv" hidden></div>
 <div id="lb" onclick="if(event.target==this)this.style.display='none'" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:20;align-items:center;justify-content:center;flex-direction:column">
   <img id="lbi" alt="" style="max-width:100%;max-height:80vh">
   <div class="row" style="width:100%;max-width:560px;padding:10px">
@@ -112,6 +121,7 @@ a{color:var(--dg)}
 </div>
 <script src="config.js"></script>
 <script src="quote.js"></script>
+<script src="gallery.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

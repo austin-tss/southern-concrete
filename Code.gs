@@ -586,6 +586,15 @@ function receiptsFolder_() {
   var it = r.getFoldersByName('Receipts');
   return it.hasNext() ? it.next() : r.createFolder('Receipts');
 }
+function galleryFolder_() {
+  var r = root_();
+  var it = r.getFoldersByName('Gallery');
+  return it.hasNext() ? it.next() : r.createFolder('Gallery');
+}
+function gallery_() {
+  var list = load_('gallery.json');
+  return Array.isArray(list) ? list : [];
+}
 function saveReceiptImage_(image) {
   var parts = String(image || '').split(',');
   if (parts.length < 2 || !parts[1]) throw new Error('No receipt photo');
@@ -631,7 +640,7 @@ function doGet(e) {
     } finally { L.releaseLock(); }
     return page_(responseThanksHtml({ co: CO, colors: COLORS, job: j }));
   }
-  return out_({ ok: true, test: TEST_MODE, testMode: TEST_MODE, testTo: TEST_MODE ? TEST_TO : '', root: root_().getUrl(), jobs: load_(), blocks: load_('blocks.json'), settings: settings_() });
+  return out_({ ok: true, test: TEST_MODE, testMode: TEST_MODE, testTo: TEST_MODE ? TEST_TO : '', root: root_().getUrl(), jobs: load_(), blocks: load_('blocks.json'), settings: settings_(), gallery: gallery_() });
 }
 function numField_(v) {
   if (v == null || v === '') return '';
@@ -658,6 +667,34 @@ function doPost(e) {
       if (act.length > 500) act = act.slice(-500);
       save_(act, 'activity.json');
       return out_({ ok: true });
+    }
+    if (d.a === 'gadd') {
+      var parts = String(d.image || '').split(',');
+      if (parts.length < 2 || !parts[1]) return out_({ ok: false, err: 'Choose a photo first' });
+      var cap = String(d.caption || '').trim().slice(0, 200);
+      var tags = String(d.tags || '').split(',').map(function (s) { return s.trim().slice(0, 40); }).filter(Boolean).slice(0, 12);
+      var blob = Utilities.newBlob(Utilities.base64Decode(parts[1]), 'image/jpeg', 'gallery-' + Date.now() + '.jpg');
+      var file = galleryFolder_().createFile(blob);
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      var list = gallery_();
+      list.unshift({
+        id: file.getId(),
+        caption: cap,
+        tags: tags,
+        t: new Date().toISOString(),
+        url: 'https://drive.google.com/thumbnail?id=' + file.getId() + '&sz=w1600'
+      });
+      if (list.length > 400) list = list.slice(0, 400);
+      save_(list, 'gallery.json');
+      return out_({ ok: true, gallery: list });
+    }
+    if (d.a === 'gdel') {
+      var before = gallery_();
+      var had = before.some(function (x) { return x.id === d.id; });
+      var left = before.filter(function (x) { return x.id !== d.id; });
+      if (had && d.id) { try { DriveApp.getFileById(d.id).setTrashed(true); } catch (eG) {} }
+      save_(left, 'gallery.json');
+      return out_({ ok: true, gallery: left });
     }
     if (d.a === 'settings' || d.a === 'explist' || d.a === 'expadd' || d.a === 'expdel' || d.a === 'rcscan' || d.a === 'rcrescan' || d.a === 'rcdrop') {
       if (!pinOk_(d)) return out_({ ok: false, err: 'Wrong PIN' });

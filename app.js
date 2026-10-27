@@ -6,6 +6,7 @@ let blocks = [], role = sessionStorage.sccRole || '', jobs = [], root = '', cur 
 let serverTest = null, view = '', SET = {}, EXP = [], EXPL = false, EXPLOAD = false, PAYING = '', PAYM = 'check', CK = '', CQ = '', CL = [], SQ = '', tab = 'est';
 let RC = null, RCT = 0, RQ = [];
 let jtab = 'job', jtabFor = null;
+let GALS = [], GQ = '', GVIEW = [], GI = 0, GPIC = '', GX = 0;
 const $ = (s) => document.querySelector(s);
 const A = $('#app');
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -47,6 +48,7 @@ async function refresh() {
     blocks = d.blocks || [];
     serverTest = typeof d.test === 'boolean' ? d.test : d.testMode;
     if (d.settings) SET = d.settings;
+    if (Array.isArray(d.gallery)) GALS = d.gallery;
     const bar = $('#testbar');
     if (bar) bar.hidden = !TEST_MODE && serverTest !== true;
   } catch (e) { toast(e.message); }
@@ -169,6 +171,7 @@ function paint() {
   if (view === 'cust') return custScreen();
   if (view === 'books') return bookScreen();
   if (view === 'set') return setScreen();
+  if (view === 'gal') return galScreen();
   home();
 }
 function key(k) {
@@ -406,6 +409,7 @@ function home() {
   if (!G[tab]) tab = 'est';
   A.innerHTML = `<button class="btn huge" type="button" onclick="newq()">+ New quote</button>
 <div class="row"><button class="btn n nav" type="button" onclick="go('cust')">👥 Customers</button><button class="btn n nav" type="button" onclick="go('books')">📒 Bookkeeping</button></div>
+<button class="btn huge" type="button" onclick="go('gal')">Gallery</button>
 <input id="find" type="search" placeholder="Search name, address or estimate #" value="${esc(SQ)}" autocomplete="off" oninput="SQ=this.value;hl()" style="margin-top:12px;font-size:16px">
 <div class="tabs" style="margin-top:12px">${['est', 'jobs', 'done'].map((k) => `<button type="button" class="${tab === k && !SQ.trim() ? 'on' : ''}" onclick="tab='${k}';SQ='';home()">${SECT[k]}<span class="cnt">${G[k].length}</span></button>`).join('')}</div>
 <div id="hl"></div>
@@ -416,9 +420,119 @@ function homeBtn() { RC = null; view = ''; CK = ''; render(); window.scrollTo(0,
 function go(v) {
   RC = null; view = v; cur = null; PAYING = '';
   if (v !== 'cust') CK = '';
-  try { api({ a: 'log', what: 'opened ' + ({ cust: 'Customers', books: 'Bookkeeping', set: 'Settings' }[v] || v), role: role, ua: '' }).catch(function () {}); } catch (e) {}
+  try { api({ a: 'log', what: 'opened ' + ({ cust: 'Customers', books: 'Bookkeeping', set: 'Settings', gal: 'Gallery' }[v] || v), role: role, ua: '' }).catch(function () {}); } catch (e) {}
   render();
   window.scrollTo(0, 0);
+}
+
+function gHits() {
+  return SCCGallery.match(GQ, (GALS || []).map(SCCGallery.ownPhoto));
+}
+function gqSet(v) { GQ = v; glist(); }
+function galScreen() {
+  A.innerHTML = `<div class="card" style="margin-bottom:10px"><h2 style="margin-bottom:8px">Gallery</h2>
+<input id="gq" type="search" enterkeyhint="search" placeholder="Try gray flake garage floor or metallic blue" value="${esc(GQ)}" autocomplete="off" oninput="gqSet(this.value)" style="font-size:20px;padding:18px">
+<p class="muted" style="margin:10px 0 0">Photos: <a href="${esc(SCCGallery.simiron)}" target="_blank" rel="noopener">Simiron</a></p></div>
+<button class="btn huge" id="gshow" type="button" onclick="gshow()">Show photos</button>
+<button class="btn n" type="button" onclick="$('#gfile').click()">Upload a photo</button>
+<input id="gfile" type="file" accept="image/*" hidden onchange="gpick(this)">
+<div id="gform"></div>
+<div id="glist"></div>
+<button class="btn gr" type="button" onclick="homeBtn()">← All projects</button>`;
+  glist();
+  const q = $('#gq');
+  if (q && GQ) { const n = q.value.length; try { q.focus(); q.setSelectionRange(n, n); } catch (e) {} }
+}
+function glist() {
+  const el = $('#glist');
+  if (!el) return;
+  const hits = gHits();
+  const show = $('#gshow');
+  if (show) {
+    show.disabled = !hits.length;
+    show.textContent = hits.length ? 'Show ' + hits.length + ' photo' + (hits.length === 1 ? '' : 's') : 'No matching photos';
+  }
+  el.innerHTML = (hits.length ? '' : '<p class="muted" style="text-align:center;padding:18px">Nothing matches that. Try flake, metallic, quartz, or a color.</p>') +
+    '<div class="ggrid">' + hits.map((it, i) => `<button type="button" onclick="gopen(${i})"><img src="${esc(it.src)}" alt="${esc(it.name)}"><span>${esc(it.name)}</span></button>`).join('') + '</div>';
+}
+function gshow() { if (gHits().length) gopen(0); }
+function gopen(i) {
+  GVIEW = gHits();
+  GI = Math.max(0, Math.min(i, GVIEW.length - 1));
+  gdraw();
+}
+function gnav(d) {
+  if (!GVIEW.length) return;
+  GI = (GI + d + GVIEW.length) % GVIEW.length;
+  gdraw();
+}
+function gclose() {
+  const v = $('#gv');
+  if (v) v.hidden = true;
+}
+function gdraw() {
+  const v = $('#gv');
+  const it = GVIEW[GI];
+  if (!v || !it) return;
+  gbind();
+  const credit = it.ours ? 'Our photo' : 'Photos: <a href="' + esc(it.page || SCCGallery.simiron) + '" target="_blank" rel="noopener">Simiron</a>';
+  v.hidden = false;
+  v.innerHTML = `<img id="gimg" src="${esc(it.src)}" alt="${esc(it.name)}">
+<h2>${esc(it.name)}</h2>
+<p class="muted" style="margin:2px 0 8px">${esc(it.system)}${it.colors ? ' · ' + esc(it.colors) : ''} · ${GI + 1} of ${GVIEW.length}<br>${credit}</p>
+<div class="row"><button class="btn huge" type="button" onclick="gnav(-1)">◀</button><button class="btn huge" type="button" onclick="gnav(1)">▶</button></div>
+<button class="btn gr" type="button" onclick="gclose()">Close</button>
+${it.ours ? `<button class="btn red" type="button" onclick="gdel('${esc(it.id)}')">Remove this photo</button>` : ''}`;
+}
+function gbind() {
+  const v = $('#gv');
+  if (!v || v._b) return;
+  v._b = 1;
+  v.addEventListener('touchstart', (e) => { if (e.changedTouches && e.changedTouches[0]) GX = e.changedTouches[0].clientX; }, { passive: true });
+  v.addEventListener('touchend', (e) => {
+    if (!e.changedTouches || !e.changedTouches[0]) return;
+    const dx = e.changedTouches[0].clientX - GX;
+    if (Math.abs(dx) > 50) gnav(dx < 0 ? 1 : -1);
+  });
+}
+async function gpick(inp) {
+  const f = inp.files && inp.files[0];
+  inp.value = '';
+  if (!f) return;
+  GPIC = await shrink(f);
+  const box = $('#gform');
+  if (!box) return;
+  box.innerHTML = `<div class="card"><img src="${GPIC}" alt="" style="width:100%;max-height:240px;object-fit:contain;border-radius:12px;background:#eef0f4">
+<label>Caption</label><input id="gcap" autocomplete="off" placeholder="Blue metallic in a garage">
+<label>Tags</label><input id="gtags" autocomplete="off" placeholder="metallic, blue, garage">
+<button class="btn huge" id="gsave" type="button" onclick="gsave()">Save photo</button></div>`;
+}
+async function gsave() {
+  if (!GPIC) return toast('Choose a photo first');
+  const b = $('#gsave');
+  if (b) { b.disabled = true; b.textContent = 'Saving…'; }
+  try {
+    const r = await api({ a: 'gadd', image: GPIC, caption: ($('#gcap') && $('#gcap').value) || '', tags: ($('#gtags') && $('#gtags').value) || '' });
+    if (Array.isArray(r.gallery)) GALS = r.gallery;
+    GPIC = '';
+    toast('Photo saved');
+    const box = $('#gform');
+    if (box) box.innerHTML = '';
+    glist();
+  } catch (e) {
+    toast(e.message);
+    if (b) { b.disabled = false; b.textContent = 'Save photo'; }
+  }
+}
+async function gdel(id) {
+  if (!confirm('Remove this photo from the gallery?')) return;
+  try {
+    const r = await api({ a: 'gdel', id: id });
+    if (Array.isArray(r.gallery)) GALS = r.gallery;
+    toast('Photo removed');
+    gclose();
+    glist();
+  } catch (e) { toast(e.message); }
 }
 
 const STATES = { alabama: 'AL', alaska: 'AK', arizona: 'AZ', arkansas: 'AR', california: 'CA', colorado: 'CO', connecticut: 'CT', delaware: 'DE', florida: 'FL', georgia: 'GA', hawaii: 'HI', idaho: 'ID', illinois: 'IL', indiana: 'IN', iowa: 'IA', kansas: 'KS', kentucky: 'KY', louisiana: 'LA', maine: 'ME', maryland: 'MD', massachusetts: 'MA', michigan: 'MI', minnesota: 'MN', mississippi: 'MS', missouri: 'MO', montana: 'MT', nebraska: 'NE', nevada: 'NV', 'new hampshire': 'NH', 'new jersey': 'NJ', 'new mexico': 'NM', 'new york': 'NY', 'north carolina': 'NC', 'north dakota': 'ND', ohio: 'OH', oklahoma: 'OK', oregon: 'OR', pennsylvania: 'PA', 'rhode island': 'RI', 'south carolina': 'SC', 'south dakota': 'SD', tennessee: 'TN', texas: 'TX', utah: 'UT', vermont: 'VT', virginia: 'VA', washington: 'WA', 'west virginia': 'WV', wisconsin: 'WI', wyoming: 'WY', 'district of columbia': 'DC' };

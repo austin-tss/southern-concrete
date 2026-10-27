@@ -2,7 +2,7 @@
   "name": "southern-concrete",
   "private": true,
   "scripts": {
-    "test": "node --test test/quote.test.mjs test/mail-guard.test.mjs",
+    "test": "node --test test/quote.test.mjs test/mail-guard.test.mjs test/gallery.test.mjs",
     "e2e": "node test/e2e.mjs",
     "mock": "node test/mock-server.mjs"
   },
