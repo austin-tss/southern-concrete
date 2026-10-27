@@ -7,12 +7,10 @@
 var TEST_MODE = true;
 var TEST_TO = 'austin@techsourcedsolutions.com';
 
-/* Field PINs. This static app has no server login. The PINs live in ROLES
-   below. They are not account passwords. Change them before a crew uses the desk. */
+/* Field PIN. This static app has no server login. The Owner PIN lives in ROLES
+   below. It is not an account password. Change it before the crew uses the desk. */
 var ROLES = {
-  '1234': 'Manager',
-  '0123': 'Crew',
-  '6789': 'Admin'
+  '1234': 'Owner'
 };
 
 /* Paste the Apps Script web app /exec URL after you deploy Code.gs.

@@ -52,10 +52,15 @@ try {
   if (!logo) fail('logo did not load');
   await shot(page, '01-login');
 
-  await pressPin(page, pins.Manager);
+  if (!pins.Owner) fail('Owner PIN missing from config');
+  await pressPin(page, pins.Owner);
+  await waitText(page, 'All my projects');
   await waitText(page, 'New customer quote');
+  await waitText(page, 'Crew schedule');
   await page.click('button.huge');
   await waitText(page, 'Price per sq ft');
+  await page.click('#acc-qc .acch');
+  await page.waitForSelector('#nm', { visible: true });
   await page.type('#nm', 'Pat Homeowner');
   await page.type('#ad', '1200 Call Street Tallahassee');
   await page.waitForSelector('#adsug button', { timeout: 8000 });
@@ -78,55 +83,48 @@ try {
   await waitText(page, 'Customer will see');
   await page.waitForFunction(() => [...document.querySelectorAll('#pv textarea,#pv input')].some((el) => (el.value || '').includes('Dominion') && (el.value || '').includes('480')));
   await page.click('#sq');
-  await waitText(page, 'Projects (1)');
-  await shot(page, '03-manager-list');
+  await waitText(page, 'All my projects (1)');
+  await shot(page, '03-projects');
 
   await page.evaluate(() => {
     [...document.querySelectorAll('button')].find((b) => b.textContent.includes('Pat Homeowner')).click();
   });
+  await waitText(page, 'Step 1 · Quote');
   await waitText(page, 'A Approve');
+  await waitText(page, 'Dominion');
+  await waitText(page, '480 sq ft');
+  await page.click('#rs');
+  await waitText(page, 'Test mode: Estimate sent only to ' + TEST_TO);
+  await shot(page, '04-quoted');
   await page.evaluate(() => {
     [...document.querySelectorAll('button')].find((b) => b.textContent.includes('A Approve')).click();
   });
-  await waitText(page, 'Approved');
-  await shot(page, '04-approved');
-  await page.click('#out');
-  await waitText(page, 'Enter your PIN');
-
-  await pressPin(page, pins.Crew);
+  await waitText(page, 'Step 2 · Do the job');
   await waitText(page, 'JOB COMPLETE');
-  await waitText(page, 'Dominion');
-  await waitText(page, '480 sq ft');
+  await waitText(page, 'Approved · do the job');
   const before = await page.$('#bf');
   await before.uploadFile(png);
-  await waitText(page, 'Before (1)');
+  await waitText(page, 'Before photos (1)');
   const after = await page.$('#af');
   await after.uploadFile(png);
-  await waitText(page, 'After (1)');
-  await shot(page, '05-crew');
+  await waitText(page, 'After photos (1)');
+  await shot(page, '05-job');
   await page.click('#jc');
-  await waitText(page, 'Your jobs');
-  await shot(page, '06-crew-done');
-  await page.click('#out');
-
-  await pressPin(page, pins.Admin);
-  await waitText(page, 'Invoices');
-  await page.evaluate(() => {
-    [...document.querySelectorAll('button')].find((b) => b.textContent.includes('Pat Homeowner')).click();
-  });
-  await waitText(page, 'Prefilled from the quote');
+  await waitText(page, 'Step 3 · Invoice');
+  await waitText(page, 'Done · invoice it');
   const amount = await page.$eval('#am', (el) => el.value);
   if (amount !== '$3,120.00') fail('invoice amount was ' + amount);
-  await shot(page, '07-invoice');
+  await shot(page, '06-invoice');
   await page.click('#invbtn');
   await waitText(page, 'Mark PAID');
   await waitText(page, 'OPEN');
   await page.click('#paidbtn');
   await waitText(page, 'PAID');
-  await shot(page, '08-paid');
+  await waitText(page, 'All projects');
+  await shot(page, '07-paid');
 
   const inbox = await (await fetch(base + '/inbox')).json();
-  if (inbox.length !== 3) fail('expected 3 emails, got ' + inbox.length);
+  if (inbox.length !== 4) fail('expected 4 emails, got ' + inbox.length);
   for (const mail of inbox) {
     if (mail.to !== TEST_TO || mail.replyTo !== TEST_TO) fail('mail left test mode: ' + JSON.stringify({ to: mail.to, replyTo: mail.replyTo, kind: mail.kind }));
     if (String(mail.to).includes('example.com') || String(mail.replyTo).includes('example.com')) fail('customer address used');

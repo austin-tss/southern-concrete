@@ -55,13 +55,14 @@ function handle(d) {
     return { ok: true, blocks, testMode: TEST_MODE };
   }
   if (d.a === 'create') {
-    if (!q.validEmail(d.email)) return { ok: false, err: 'Enter a valid customer email before sending.' };
+    if (d.email && !q.validEmail(d.email)) return { ok: false, err: 'That customer email does not look valid.' };
+    if (!TEST_MODE && !q.validEmail(d.email)) return { ok: false, err: 'Enter a valid customer email before sending.' };
     const fields = { sqft: d.sqft, system: d.system, color: d.color, prep: d.prep, cure: d.cure, rate: d.rate };
     const items = (d.items && d.items.length) ? d.items : q.buildItems(fields, d.quote);
     const j = {
       id: 'SCC-' + (seq++).toString(36).toUpperCase(),
       est: 'SCC-EST-2026-' + String(seq).padStart(4, '0'),
-      name: d.name, address: d.address, email: String(d.email).trim(),
+      name: d.name, address: d.address, email: String(d.email || '').trim(),
       quote: d.quote || '', sqft: numField(d.sqft), system: d.system || '', color: d.color || '',
       prep: d.prep || '', cure: d.cure || '', rate: numField(d.rate),
       items, total: q.totalOf(items), status: 'sent', created: new Date().toISOString(),
@@ -104,7 +105,17 @@ function handle(d) {
     if (!q.validEmail(d.email)) return { ok: false, err: 'Invalid email' };
     j.email = String(d.email).trim();
   } else if (d.a === 'respond') respond(j, d);
-  else return { ok: false, err: 'Bad action' };
+  else if (d.a === 'resend') {
+    if (!j.est) return { ok: false, err: 'This job has no quote to resend' };
+    j.resent = (j.resent || 0) + 1;
+    j.resentAt = new Date().toISOString();
+    const html = q.quoteEmailHtml({
+      co: CO, colors: COLORS, job: Object.assign({ date: 'October 27, 2026' }, j),
+      testMode: TEST_MODE, testTo: TEST_TO, logoSrc: 'cid:logo', photosHtml: (j.photos || []).length ? '<img alt="site">' : '',
+      link: (k) => '/exec?a=respond&id=' + encodeURIComponent(j.id) + '&ans=' + k
+    });
+    record('quote', j, 'Your concrete coating estimate from Southern Concrete Coatings - ' + j.est, html);
+  } else return { ok: false, err: 'Bad action' };
   return { ok: true, testMode: TEST_MODE, job: j };
 }
 

@@ -1,20 +1,21 @@
 # Southern Concrete Coatings Field Desk
 
-Field desk for [Southern Concrete Coatings](https://www.southernconcretecoatingsllc.com/) in Tallahassee. Managers send photo quotes, customers answer Approve / Changes / Decline / Other, the crew posts before-and-after photos and hits **Job complete**, and admin sends an invoice prefilled from the quote.
+Field desk for [Southern Concrete Coatings](https://www.southernconcretecoatingsllc.com/) in Tallahassee. One Owner login runs the whole job: a photo quote, the customer answer (Approve / Changes / Decline / Other), before-and-after photos, **Job complete**, then an invoice prefilled from the quote.
 
-The screen pattern follows the Field Desk in [austin-tss/fielder](https://github.com/austin-tss/fielder): one static site on GitHub Pages, one Google Apps Script web app for Gmail and Drive. `austin-tss/miller` and `austin-tss/walker` were not available from this account (GitHub returned 404), so those ports were not used as source.
+The screen pattern follows the all-in-one Field Desk. [austin-tss/walker](https://github.com/austin-tss/walker) is the Walker Land Management app Austin named, and it was not readable from this account (GitHub returned 404). The matching all-in-one reference that was readable is [austin-tss/fielder-aio](https://github.com/austin-tss/fielder-aio): one project list, accordions, and one job screen with Step 1 Quote, Step 2 Do the job, and Step 3 Invoice. Wording, pricing, and colors are Southern Concrete Coatings.
 
-Live site (after Pages is enabled): https://austin-tss.github.io/southern-concrete/
+Live site: https://austin-tss.github.io/southern-concrete/
 
-## What the crew sees
+## What you see
 
 - Light mode, big buttons, one job on screen once you open it.
-- Roles: **Manager**, **Crew**, **Admin**. Each signs in with a PIN.
-- Photo quote with square footage, coating system, color or flake, prep, cure time, and price per square foot. Notes can be typed or dictated in browsers that support speech recognition.
+- One role: **Owner**. The PIN is in `config.js` under `ROLES`.
+- Home is every project, **+ New customer quote**, and **Crew schedule**.
+- Photo quote with square footage, coating system, color or flake, prep, cure time, and price per square foot. Customer name, address, and email sit in an accordion. Notes can be typed or dictated in browsers that support speech recognition.
 - Address suggestions (Photon, then Nominatim), biased toward Tallahassee.
-- Customer email with A / B / C / Other, plus a PDF estimate.
-- Crew before and after photos and a **JOB COMPLETE** button. That sends the recap, with the photos and a refer-a-neighbor link.
-- Admin invoice prefilled from the quote, with an Open / Paid toggle.
+- Customer email with A / B / C / Other, plus a PDF estimate. The job screen can resend that quote.
+- On an approved job: before and after photos and a **JOB COMPLETE** button. That sends the recap, with the photos and a refer-a-neighbor link, and stays on the job for the invoice.
+- Invoice prefilled from the quote, with an Open / Paid toggle.
 - One Google Drive folder per project, under a root folder named `Southern Concrete Coatings Field Desk`.
 
 ## Test mode
@@ -25,7 +26,7 @@ While test mode is on, every message — To and Reply-To — is forced to `austi
 
 ## Logins
 
-Manager, Crew, and Admin are the three roles. The PINs are in `config.js` under `ROLES`. They are field PINs for this static page, not account passwords. Change them before a crew uses the desk. Do not put real passwords in the repo.
+Owner is the only role. The PIN is in `config.js` under `ROLES`. It is a field PIN for this static page, not an account password. Change it before the crew uses the desk. Do not put real passwords in the repo.
 
 ## Brand
 

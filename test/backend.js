@@ -108,8 +108,12 @@ function makePdf_(j) {
   j.pdfId = f.getId();
   return b;
 }
+function customerOk_(j) {
+  if (j.email && !validEmail(j.email)) throw new Error('That customer email does not look valid.');
+  if (!TEST_MODE && !validEmail(j.email)) throw new Error('Enter a valid customer email before sending.');
+}
 function sendQuote_(j) {
-  if (!validEmail(j.email)) throw new Error('Enter a valid customer email before sending. Test mode still keeps the copy, but the job needs an address on file.');
+  customerOk_(j);
   var im = imgs_(j.photos, 'q');
   im.inl.logo = logoBlob_();
   var pdf = null;
@@ -124,7 +128,7 @@ function sendQuote_(j) {
   });
 }
 function sendRecap_(j) {
-  if (!validEmail(j.email)) throw new Error('Customer email on the job is missing or invalid.');
+  customerOk_(j);
   var ib = imgs_((j.crew || []).filter(function (p) { return p.kind === 'before'; }), 'b');
   var ia = imgs_((j.crew || []).filter(function (p) { return p.kind === 'after'; }), 'a');
   var inl = { logo: logoBlob_() }, k;
@@ -138,7 +142,7 @@ function sendRecap_(j) {
   });
 }
 function sendInvoice_(j) {
-  if (!validEmail(j.email)) throw new Error('Customer email on the job is missing or invalid.');
+  customerOk_(j);
   sendMail_({
     job: j,
     subject: 'Invoice from Southern Concrete Coatings - ' + (j.invoice && j.invoice.amount || ''),
@@ -220,7 +224,8 @@ function doPost(e) {
       return out_({ ok: true, blocks: bl, testMode: TEST_MODE });
     }
     if (d.a === 'create') {
-      if (!validEmail(d.email)) return out_({ ok: false, err: 'Enter a valid customer email before sending.' });
+      if (d.email && !validEmail(d.email)) return out_({ ok: false, err: 'That customer email does not look valid.' });
+      if (!TEST_MODE && !validEmail(d.email)) return out_({ ok: false, err: 'Enter a valid customer email before sending.' });
       var fields = { sqft: d.sqft, system: d.system, color: d.color, prep: d.prep, cure: d.cure, rate: d.rate };
       var items = (d.items && d.items.length) ? d.items : buildItems(fields, d.quote);
       j = {
@@ -228,7 +233,7 @@ function doPost(e) {
         est: estNo_(),
         name: d.name,
         address: d.address,
-        email: String(d.email).trim(),
+        email: String(d.email || '').trim(),
         quote: d.quote || '',
         sqft: numField_(d.sqft),
         system: d.system || '',
@@ -268,7 +273,12 @@ function doPost(e) {
         if (!validEmail(d.email)) return out_({ ok: false, err: 'Invalid email' });
         j.email = String(d.email).trim();
       } else if (d.a === 'respond') respond_(j, d);
-      else return out_({ ok: false, err: 'Bad action' });
+      else if (d.a === 'resend') {
+        if (!j.est) return out_({ ok: false, err: 'This job has no quote to resend' });
+        send = sendQuote_;
+        j.resent = (j.resent || 0) + 1;
+        j.resentAt = new Date().toISOString();
+      } else return out_({ ok: false, err: 'Bad action' });
     }
     if (send) {
       try { send(j); } catch (x) { return out_({ ok: false, err: String(x.message || x) }); }

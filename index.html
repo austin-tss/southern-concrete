@@ -42,7 +42,17 @@ input,textarea,select{width:100%;font-size:18px;padding:14px;border:2px solid va
 .ph img{width:31%;aspect-ratio:1;object-fit:cover;border-radius:8px;background:#e8eaf0}
 .badge{display:inline-block;padding:4px 10px;border-radius:20px;font-weight:700;font-size:14px;color:#fff;background:#8a8f98}
 .badge.open{background:#9a3412}.badge.paid{background:#2f6b4f}
-.row{display:flex;gap:8px}.row .btn{flex:1}
+.row{display:flex;gap:8px}.row .btn{flex:1;min-width:0;padding:16px 6px;font-size:17px}
+.acc{background:#fff;border-radius:14px;margin:0 0 12px;box-shadow:0 1px 4px rgba(17,24,39,.08);border:2px solid var(--line);overflow:hidden}
+.acch{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-height:64px;padding:12px 16px;background:#fff;border:0;text-align:left;font-size:18px;color:var(--n);cursor:pointer}
+.acch b{font-size:18px}
+.acch small{display:block;font-size:14px;color:#5c6370;font-weight:400;margin-top:2px}
+.acch i{font-style:normal;font-size:26px;color:var(--g);transition:transform .2s}
+.acc.open .acch i{transform:rotate(180deg)}
+.acc.open{border-color:var(--g)}
+.accb{display:none;padding:4px 16px 16px}
+.acc.open .accb{display:block}
+#acc-qc{overflow:visible}
 .mic{background:var(--dg)}.mic.on{background:#9a3412}
 .muted{color:#5c6370;font-size:14px}
 .spec p{margin:8px 0;font-size:18px}
@@ -62,7 +72,7 @@ a{color:var(--dg)}
 <body>
 <header>
   <img src="logo.png" alt="Southern Concrete Coatings">
-  <div><b>Southern Concrete Coatings</b><small id="who">Field Desk</small></div>
+  <div><b>Southern Concrete Coatings</b><small id="who">All-in-one</small></div>
   <span class="testpill" id="testpill">Test mode</span>
   <button id="out" hidden onclick="logout()">Sign out</button>
 </header>
