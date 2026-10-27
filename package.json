@@ -1,0 +1,12 @@
+{
+  "name": "southern-concrete-field-desk",
+  "private": true,
+  "scripts": {
+    "test": "node --test test/quote.test.mjs test/mail-guard.test.mjs",
+    "e2e": "node test/e2e.mjs",
+    "mock": "node test/mock-server.mjs"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^24.15.0"
+  }
+}

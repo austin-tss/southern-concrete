@@ -1,0 +1,31 @@
+/* Southern Concrete Coatings Field Desk
+   TEST_MODE is the single switch for outgoing mail.
+   true  = every email is forced to TEST_TO. Code.gs enforces the same flag.
+   false = mail goes to the customer address stored on the job.
+   Leave this true until you are ready for real customers, and change it in
+   Code.gs at the same time. Both copies must match. */
+var TEST_MODE = true;
+var TEST_TO = 'austin@techsourcedsolutions.com';
+
+/* Field PINs. This static app has no server login. The PINs live in ROLES
+   below. They are not account passwords. Change them before a crew uses the desk. */
+var ROLES = {
+  '1234': 'Manager',
+  '0123': 'Crew',
+  '6789': 'Admin'
+};
+
+/* Paste the Apps Script web app /exec URL after you deploy Code.gs.
+   Leave this empty until then. No API keys live here. */
+var API_URL = '';
+
+var CO = {
+  name: 'Southern Concrete Coatings',
+  desk: 'Field Desk',
+  legal: 'Southern Concrete Coatings LLC',
+  addr: 'Tallahassee, FL',
+  phone: '(850) 766-9992',
+  email: 'mccardlematt@yahoo.com',
+  web: 'www.southernconcretecoatingsllc.com',
+  site: 'https://www.southernconcretecoatingsllc.com/'
+};

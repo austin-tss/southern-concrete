@@ -1,0 +1,280 @@
+var TEST_MODE = true; // single server flag — keep identical to config.js TEST_MODE
+var TEST_TO = 'austin@techsourcedsolutions.com';
+var ROOT_NAME = 'Southern Concrete Coatings Field Desk';
+var CO = {
+  name: 'Southern Concrete Coatings',
+  legal: 'Southern Concrete Coatings LLC',
+  addr: 'Tallahassee, FL',
+  phone: '(850) 766-9992',
+  email: 'mccardlematt@yahoo.com',
+  web: 'www.southernconcretecoatingsllc.com',
+  site: 'https://www.southernconcretecoatingsllc.com/'
+};
+var COLORS = { n: '#3a415c', g: '#424866', dg: '#2a3148' };
+var LOGO = '__LOGO_DATA_URL__';
+var LABELS = { A: 'Approved', B: 'Approved with changes', C: 'Declined', O: 'Question / other' };
+var SLOTS = ['Weekdays 8-12', 'Weekdays 12-5', 'Weekends', 'Anytime'];
+
+function root_() {
+  var p = PropertiesService.getScriptProperties(), id = p.getProperty('ROOT');
+  if (id) { try { return DriveApp.getFolderById(id); } catch (e) {} }
+  var it = DriveApp.getFoldersByName(ROOT_NAME);
+  var f = it.hasNext() ? it.next() : DriveApp.createFolder(ROOT_NAME);
+  p.setProperty('ROOT', f.getId());
+  return f;
+}
+function file_(n) {
+  var r = root_(), it = r.getFilesByName(n);
+  return it.hasNext() ? it.next() : r.createFile(n, '[]', 'application/json');
+}
+function load_(n) { return JSON.parse(file_(n || 'jobs.json').getBlob().getDataAsString() || '[]'); }
+function save_(j, n) { file_(n || 'jobs.json').setContent(JSON.stringify(j)); }
+function out_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
+function clean_(s) { return String(s || '').replace(/[\\\/]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80); }
+function folder_(j) {
+  var r = root_();
+  if (j.folderId) { try { return DriveApp.getFolderById(j.folderId); } catch (e) {} }
+  var n = clean_(j.id) + ' - ' + clean_(j.name) + ' - ' + clean_(j.address);
+  var it = r.getFoldersByName(n);
+  var f = it.hasNext() ? it.next() : r.createFolder(n);
+  j.folder = f.getUrl();
+  j.folderId = f.getId();
+  return f;
+}
+function savePhotos_(j, list, kind) {
+  var f = folder_(j);
+  return (list || []).map(function (d, i) {
+    var b = Utilities.newBlob(Utilities.base64Decode(String(d).split(',')[1]), 'image/jpeg', kind + '-' + Date.now() + '-' + i + '.jpg');
+    var x = f.createFile(b);
+    x.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    return { id: x.getId(), url: 'https://drive.google.com/thumbnail?id=' + x.getId() + '&sz=w1200', kind: kind };
+  });
+}
+function estNo_() {
+  var p = PropertiesService.getScriptProperties(), y = new Date().getFullYear(), k = 'EST' + y;
+  var n = Number(p.getProperty(k) || 0) + 1;
+  p.setProperty(k, String(n));
+  return 'SCC-EST-' + y + '-' + ('000' + n).slice(-4);
+}
+function today_() { return Utilities.formatDate(new Date(), 'America/New_York', 'MMMM d, yyyy'); }
+function view_(j) {
+  var o = JSON.parse(JSON.stringify(j));
+  o.date = today_();
+  return o;
+}
+function logoBlob_() {
+  return Utilities.newBlob(Utilities.base64Decode(LOGO.split(',')[1]), 'image/png', 'logo.png');
+}
+function imgs_(ps, pre) {
+  var inl = {}, h = '';
+  (ps || []).forEach(function (p, i) {
+    if (!p.id) return;
+    inl[pre + i] = DriveApp.getFileById(p.id).getBlob();
+    h += '<img src="cid:' + pre + i + '" alt="" style="width:48%;max-width:290px;border-radius:8px;margin:4px 1%;display:inline-block">';
+  });
+  return { inl: inl, h: h };
+}
+function respUrl_(j, k) {
+  return ScriptApp.getService().getUrl() + '?a=respond&id=' + encodeURIComponent(j.id) + '&ans=' + k;
+}
+function envelope_(j) {
+  var env = deliveryAddress(TEST_MODE, TEST_TO, j && j.email, CO.email);
+  if (TEST_MODE && (env.to !== TEST_TO || env.replyTo !== TEST_TO)) {
+    throw new Error('Test mode blocked a send that was not addressed only to ' + TEST_TO);
+  }
+  return env;
+}
+function sendMail_(msg) {
+  var env = envelope_(msg.job);
+  var payload = {
+    to: env.to,
+    replyTo: env.replyTo,
+    name: CO.name,
+    subject: (TEST_MODE ? 'TEST - ' : '') + msg.subject,
+    htmlBody: msg.html
+  };
+  if (msg.inlineImages) payload.inlineImages = msg.inlineImages;
+  if (msg.attachments) payload.attachments = msg.attachments;
+  MailApp.sendEmail(payload);
+}
+function mailOpts_(j) {
+  return { co: CO, colors: COLORS, job: view_(j), testMode: TEST_MODE, testTo: TEST_TO, logoSrc: 'cid:logo' };
+}
+function makePdf_(j) {
+  var html = pdfHtml(Object.assign(mailOpts_(j), { logoSrc: LOGO }));
+  var b = Utilities.newBlob(html, 'text/html', 'estimate.html').getAs('application/pdf').setName('Southern Concrete Coatings Estimate ' + j.est + '.pdf');
+  var f = folder_(j).createFile(b);
+  j.pdf = f.getUrl();
+  j.pdfId = f.getId();
+  return b;
+}
+function sendQuote_(j) {
+  if (!validEmail(j.email)) throw new Error('Enter a valid customer email before sending. Test mode still keeps the copy, but the job needs an address on file.');
+  var im = imgs_(j.photos, 'q');
+  im.inl.logo = logoBlob_();
+  var pdf = null;
+  if (j.pdfId) { try { pdf = DriveApp.getFileById(j.pdfId).getBlob().setName('Southern Concrete Coatings Estimate ' + j.est + '.pdf'); } catch (e) { pdf = null; } }
+  if (!pdf) pdf = makePdf_(j);
+  sendMail_({
+    job: j,
+    subject: 'Your concrete coating estimate from Southern Concrete Coatings - ' + j.est,
+    html: quoteEmailHtml(Object.assign(mailOpts_(j), { photosHtml: im.h, link: function (k) { return respUrl_(j, k); } })),
+    inlineImages: im.inl,
+    attachments: [pdf]
+  });
+}
+function sendRecap_(j) {
+  if (!validEmail(j.email)) throw new Error('Customer email on the job is missing or invalid.');
+  var ib = imgs_((j.crew || []).filter(function (p) { return p.kind === 'before'; }), 'b');
+  var ia = imgs_((j.crew || []).filter(function (p) { return p.kind === 'after'; }), 'a');
+  var inl = { logo: logoBlob_() }, k;
+  for (k in ib.inl) inl[k] = ib.inl[k];
+  for (k in ia.inl) inl[k] = ia.inl[k];
+  sendMail_({
+    job: j,
+    subject: 'Your floor is done - Southern Concrete Coatings',
+    html: recapEmailHtml(Object.assign(mailOpts_(j), { beforeHtml: ib.h, afterHtml: ia.h })),
+    inlineImages: inl
+  });
+}
+function sendInvoice_(j) {
+  if (!validEmail(j.email)) throw new Error('Customer email on the job is missing or invalid.');
+  sendMail_({
+    job: j,
+    subject: 'Invoice from Southern Concrete Coatings - ' + (j.invoice && j.invoice.amount || ''),
+    html: invoiceEmailHtml(mailOpts_(j)),
+    inlineImages: { logo: logoBlob_() }
+  });
+}
+function respond_(j, p) {
+  j.response = {
+    ans: p.ans,
+    label: LABELS[p.ans] || p.ans,
+    text: p.text || '',
+    avail: p.avail || '',
+    when: p.when || '',
+    at: new Date().toISOString()
+  };
+  j.status = (p.ans === 'A' || p.ans === 'B') ? 'approved' : (p.ans === 'C' ? 'declined' : 'reply');
+}
+function page_(body) {
+  var css = 'body{margin:0;background:#f4f5f7;font-family:Arial,sans-serif;color:#212020}.w{max-width:520px;margin:0 auto;padding:18px}';
+  return HtmlService.createHtmlOutput(
+    '<meta name="viewport" content="width=device-width,initial-scale=1"><style>' + css + '</style>' +
+    '<div style="background:' + COLORS.n + ';color:#fff;padding:14px 18px;font-weight:bold;font-size:18px">Southern Concrete Coatings</div>' +
+    (TEST_MODE ? '<div style="background:#fff3cd;color:#5c4300;padding:10px 14px;font-weight:bold">Test mode — messages about this estimate go only to ' + TEST_TO + '</div>' : '') +
+    '<div class="w">' + body + '</div>'
+  ).setTitle('Southern Concrete Coatings').addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+function doGet(e) {
+  var p = (e && e.parameter) || {};
+  if (p.a === 'img' && p.id) {
+    var b = DriveApp.getFileById(p.id).getBlob();
+    return out_({ ok: true, data: 'data:' + b.getContentType() + ';base64,' + Utilities.base64Encode(b.getBytes()) });
+  }
+  if (p.a === 'respond') {
+    var js = load_(), j = js.filter(function (x) { return x.id === p.id; })[0];
+    if (!j) return page_('<h2>Estimate not found</h2><p>Please call ' + CO.phone + '.</p>');
+    if (p.ans !== 'C' && !p.done) {
+      return page_(responseFormHtml({
+        co: CO, colors: COLORS, job: j, ans: p.ans, labels: LABELS, slots: SLOTS,
+        action: ScriptApp.getService().getUrl()
+      }));
+    }
+    var L = LockService.getScriptLock();
+    L.waitLock(20000);
+    try {
+      js = load_();
+      j = js.filter(function (x) { return x.id === p.id; })[0];
+      respond_(j, p);
+      save_(js);
+    } finally { L.releaseLock(); }
+    var av = [j.response.avail, j.response.when].filter(Boolean).join(' - ');
+    return page_('<h2 style="color:' + COLORS.dg + '">Thank you</h2><p style="font-size:17px">Your answer was received: <b>' + escHtml(j.response.label) + '</b></p>' +
+      (av ? '<p>Preferred time: <b>' + escHtml(av) + '</b></p>' : '') +
+      (j.response.text ? '<p>Your note: ' + escHtml(j.response.text) + '</p>' : '') +
+      '<p>We will confirm the installation window. Questions? Call ' + CO.phone + '.</p>');
+  }
+  return out_({ ok: true, testMode: TEST_MODE, testTo: TEST_MODE ? TEST_TO : '', root: root_().getUrl(), jobs: load_(), blocks: load_('blocks.json') });
+}
+function numField_(v) {
+  if (v == null || v === '') return '';
+  var n = Number(String(v).replace(/[$,]/g, ''));
+  return isNaN(n) ? '' : n;
+}
+function doPost(e) {
+  var d = JSON.parse(e.postData.contents);
+  var L = LockService.getScriptLock();
+  L.waitLock(30000);
+  var j, send = null, js;
+  try {
+    js = load_();
+    if (d.a === 'block' || d.a === 'unblock') {
+      var bl = load_('blocks.json');
+      bl = bl.filter(function (b) { return b.id !== d.block.id; });
+      if (d.a === 'block') {
+        if (!d.block.id) d.block.id = 'B' + Date.now().toString(36);
+        bl.push(d.block);
+      }
+      save_(bl, 'blocks.json');
+      return out_({ ok: true, blocks: bl, testMode: TEST_MODE });
+    }
+    if (d.a === 'create') {
+      if (!validEmail(d.email)) return out_({ ok: false, err: 'Enter a valid customer email before sending.' });
+      var fields = { sqft: d.sqft, system: d.system, color: d.color, prep: d.prep, cure: d.cure, rate: d.rate };
+      var items = (d.items && d.items.length) ? d.items : buildItems(fields, d.quote);
+      j = {
+        id: 'SCC-' + Date.now().toString(36).toUpperCase(),
+        est: estNo_(),
+        name: d.name,
+        address: d.address,
+        email: String(d.email).trim(),
+        quote: d.quote || '',
+        sqft: numField_(d.sqft),
+        system: d.system || '',
+        color: d.color || '',
+        prep: d.prep || '',
+        cure: d.cure || '',
+        rate: numField_(d.rate),
+        items: items,
+        total: totalOf(items),
+        status: 'sent',
+        created: new Date().toISOString(),
+        photos: [],
+        crew: []
+      };
+      folder_(j);
+      j.photos = savePhotos_(j, d.photos, 'quote');
+      js.unshift(j);
+      send = sendQuote_;
+    } else {
+      j = js.filter(function (x) { return x.id === d.id; })[0];
+      if (!j) return out_({ ok: false, err: 'Job not found' });
+      if (d.a === 'upload') j.crew = (j.crew || []).concat(savePhotos_(j, d.photos, d.kind));
+      else if (d.a === 'finish') {
+        j.crewNotes = d.notes || '';
+        j.status = 'complete';
+        j.finished = new Date().toISOString();
+        send = sendRecap_;
+      } else if (d.a === 'invoice') {
+        j.invoice = { amount: d.amount, note: d.note || '', at: new Date().toISOString(), paid: j.invoice && j.invoice.paid };
+        j.status = 'invoiced';
+        send = sendInvoice_;
+      } else if (d.a === 'paid') {
+        j.invoice = j.invoice || {};
+        j.invoice.paid = !!d.paid;
+        j.invoice.paidAt = d.paid ? new Date().toISOString() : '';
+      } else if (d.a === 'email') {
+        if (!validEmail(d.email)) return out_({ ok: false, err: 'Invalid email' });
+        j.email = String(d.email).trim();
+      } else if (d.a === 'respond') respond_(j, d);
+      else return out_({ ok: false, err: 'Bad action' });
+    }
+    if (send) {
+      try { send(j); } catch (x) { return out_({ ok: false, err: String(x.message || x) }); }
+    }
+    save_(js);
+  } finally { L.releaseLock(); }
+  return out_({ ok: true, testMode: TEST_MODE, job: j });
+}
+function setup() { Logger.log(root_().getUrl()); }
