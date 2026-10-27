@@ -32,6 +32,20 @@ function navBar(on) {
   const bar = $('#navbar');
   if (bar) bar.hidden = !on;
 }
+function closeOverlays() {
+  const gv = $('#gv');
+  if (gv) gv.hidden = true;
+  const lb = $('#lb');
+  if (lb) lb.style.display = 'none';
+}
+function overlayOpen() {
+  const gv = $('#gv');
+  const lb = $('#lb');
+  return !!((gv && !gv.hidden) || (lb && lb.style.display === 'flex'));
+}
+function syncChrome() {
+  navBar(!!(role && (cur || view || editId)));
+}
 function place() {
   return { home: !view && !cur && !editId, view: view || '', cur: cur || null, CK: CK || '', tab: tab, edit: editId || '' };
 }
@@ -39,8 +53,12 @@ function markNav() {
   if (SKIPNAV) return;
   try { history.pushState(place(), ''); } catch (e) {}
 }
-function navBack() { try { history.back(); } catch (e) { navHome(); } }
+function navBack() {
+  if (overlayOpen()) { closeOverlays(); return; }
+  try { history.back(); } catch (e) { navHome(); }
+}
 function navHome() {
+  closeOverlays();
   editId = ''; cur = null; view = ''; CK = ''; CEDIT = false; RC = null; PAYING = '';
   render();
   window.scrollTo(0, 0);
@@ -285,8 +303,7 @@ function paint() {
     role = '';
   }
   if (view === 'mile') view = '';
-  const sub = !!(role && (cur || view || editId));
-  navBar(sub);
+  syncChrome();
   if (!role) {
     pin = '';
     A.innerHTML = setupCard() + `<div class="card" style="text-align:center"><img src="logo.png" alt="" style="width:170px;max-width:60%"><h2 style="margin-top:6px">Enter PIN</h2><div id="dots"></div><div class="pin">${[1, 2, 3, 4, 5, 6, 7, 8, 9, '⌫', 0, '✓'].map((k) => `<button type="button" onclick="key('${k}')">${k}</button>`).join('')}</div></div><p class="muted" style="text-align:center">Free estimates · Garage floors and commercial coatings<br>${esc(CO.phone)}</p>`;
@@ -656,7 +673,7 @@ function gdraw() {
   gbind();
   const credit = it.ours ? 'Our photo' : 'Photos: <a href="' + esc(it.page || SCCGallery.simiron) + '" target="_blank" rel="noopener">Simiron</a>';
   v.hidden = false;
-  v.innerHTML = `<img id="gimg" src="${esc(it.src)}" alt="${esc(it.name)}">
+  v.innerHTML = `<div class="gvbar"><button type="button" onclick="gclose()">← Back</button><button type="button" onclick="navHome()">Home</button></div><img id="gimg" src="${esc(it.src)}" alt="${esc(it.name)}">
 <h2>${esc(it.name)}</h2>
 <p class="muted" style="margin:2px 0 8px">${esc(it.system)}${it.colors ? ' · ' + esc(it.colors) : ''} · ${GI + 1} of ${GVIEW.length}<br>${credit}</p>
 <div class="row"><button class="btn huge" type="button" onclick="gnav(-1)">◀</button><button class="btn huge" type="button" onclick="gnav(1)">▶</button></div>
@@ -1351,6 +1368,7 @@ function jview(id) {
   cur = id;
   const j = jobs.find((x) => x.id === id);
   if (!j) { cur = null; return render(); }
+  syncChrome();
   if (jtabFor !== id) { jtab = 'job'; jtabFor = id; }
   const st = j.status;
   const v = j.invoice || {};
@@ -1760,7 +1778,7 @@ function renderQ() {
   const el = $('#rq');
   if (!el) return;
   if (!role || !RQ.length) { el.innerHTML = ''; return; }
-  el.style.top = (($('header') && $('header').offsetHeight) || 64) + 'px';
+  el.style.top = (($('#topstick') && $('#topstick').offsetHeight) || 64) + 'px';
   el.innerHTML = RQ.map((j) => {
     const t = j.tok;
     if (j.phase === 'scan') return `<div class="rqi"><div class="spin sm"></div><span style="flex:1">Scanning receipt…</span><button class="x" type="button" onclick="rqCancel(${t})" aria-label="Cancel scan">✕</button></div>`;

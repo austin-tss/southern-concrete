@@ -21,15 +21,18 @@
 body{margin:0;font-family:Arial,Helvetica,sans-serif;color:var(--c);background:var(--bg)}
 #topstick{position:sticky;top:0;z-index:8}
 header{background:var(--n);color:#fff;padding:12px 18px;display:flex;align-items:center;gap:12px;position:static}
+#brand{display:flex;align-items:center;gap:12px;flex:1;min-width:0;margin:0;padding:0;border:0;background:transparent;color:#fff;font:inherit;text-align:left;cursor:pointer}
+#brand img{height:48px;width:auto;max-width:34vw;object-fit:contain;object-position:left center;background:#fff;border-radius:8px;padding:2px;flex:0 0 auto}
+#brand b{font-size:18px;line-height:1.15;display:block}
+#brand span{min-width:0}
+#out{margin-left:8px;flex:0 0 auto;background:transparent;border:1px solid #c5cad8;color:#fff;border-radius:10px;padding:9px 14px;font-size:14px;font-weight:700;cursor:pointer}
 #navbar{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#fff;border-bottom:1px solid var(--line);padding:8px 12px}
 #navbar[hidden]{display:none}
 #navbar button{font:inherit;font-weight:700;font-size:16px;border:0;border-radius:10px;padding:10px 14px;background:#eef0f4;color:var(--n);cursor:pointer}
+#navbar #navback{margin-right:auto}
 #navbar #navhome{margin-left:auto}
 .gvbar{display:flex;justify-content:space-between;gap:8px;margin:0 0 8px}
 .gvbar button{font:inherit;font-weight:700;font-size:16px;border:0;border-radius:10px;padding:10px 14px;background:#eef0f4;color:var(--n);cursor:pointer}
-header img{height:48px;width:auto;max-width:42vw;object-fit:contain;object-position:left center;background:#fff;border-radius:8px;padding:2px}
-header b{font-size:18px;line-height:1.15;display:block}
-header button{margin-left:auto;background:transparent;border:1px solid #c5cad8;color:#fff;border-radius:10px;padding:9px 14px;font-size:14px}
 #testbar{background:var(--gold);color:#5c4300;text-align:center;font-weight:700;padding:8px 14px;font-size:14px}
 #testbar.bad{background:#fee2e2;color:#7f1d1d;border-bottom-color:#b91c1c}
 .wrap{max-width:560px;margin:0 auto;padding:16px}
@@ -161,9 +164,11 @@ a{color:var(--dg)}
 <body>
 <div id="topstick">
 <header>
-  <img src="logo.png" alt="Southern Concrete Coatings">
-  <div><b>Southern Concrete Coatings</b></div>
-  <button id="out" hidden onclick="logout()">Sign out</button>
+  <button type="button" id="brand" onclick="navHome()" aria-label="Southern Concrete Coatings, Home">
+    <img src="logo.png" alt="">
+    <span><b>Southern Concrete Coatings</b></span>
+  </button>
+  <button id="out" type="button" hidden onclick="logout()">Sign out</button>
 </header>
 <div id="testbar" hidden>Test mode — every email goes only to austin@techsourcedsolutions.com</div>
 <div id="navbar" hidden><button type="button" id="navback" onclick="navBack()">← Back</button><button type="button" id="navhome" onclick="navHome()">Home</button></div>
@@ -181,9 +186,9 @@ a{color:var(--dg)}
     <button class="btn n" onclick="nav(1)">▶</button>
   </div>
 </div>
-<script src="config.js?v=20261027d"></script>
-<script src="quote.js?v=20261027d"></script>
-<script src="gallery.js?v=20261027d"></script>
-<script src="app.js?v=20261027d"></script>
+<script src="config.js?v=20261027e"></script>
+<script src="quote.js?v=20261027e"></script>
+<script src="gallery.js?v=20261027e"></script>
+<script src="app.js?v=20261027e"></script>
 </body>
 </html>
