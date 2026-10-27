@@ -90,6 +90,7 @@ function envelope_(j) {
 }
 function sendMail_(msg) {
   var env = envelope_(msg.job);
+  if (!env.to) return;
   var payload = {
     to: env.to,
     replyTo: env.replyTo,
@@ -114,7 +115,6 @@ function makePdf_(j) {
 }
 function customerOk_(j) {
   if (j.email && !validEmail(j.email)) throw new Error('That customer email does not look valid.');
-  if (!TEST_MODE && !validEmail(j.email)) throw new Error('Enter a valid customer email before sending.');
 }
 function sendQuote_(j) {
   customerOk_(j);
@@ -123,9 +123,12 @@ function sendQuote_(j) {
   var pdf = null;
   if (j.pdfId) { try { pdf = DriveApp.getFileById(j.pdfId).getBlob().setName('Southern Concrete Coatings Estimate ' + j.est + '.pdf'); } catch (e) { pdf = null; } }
   if (!pdf) pdf = makePdf_(j);
+  var copy = quoteEmailCopy(mailOpts_(j));
+  j.emailed = !!envelope_(j).to;
+  if (!j.emailed) return;
   sendMail_({
     job: j,
-    subject: 'Your concrete coating estimate from Southern Concrete Coatings - ' + j.est,
+    subject: copy.subject,
     html: quoteEmailHtml(Object.assign(mailOpts_(j), { photosHtml: im.h, link: function (k) { return respUrl_(j, k); } })),
     inlineImages: im.inl,
     attachments: [pdf]
@@ -191,7 +194,10 @@ function settings_() {
   var o = loadObj_('settings.json');
   var min = o.finMin == null || o.finMin === '' ? 1000 : Number(String(o.finMin).replace(/[^0-9.\-]/g, ''));
   if (isNaN(min)) min = 1000;
-  return { payLink: String(o.payLink || ''), reviewLink: String(o.reviewLink || ''), finLink: String(o.finLink || ''), finMin: min, ocr: false };
+  return {
+    payLink: String(o.payLink || ''), reviewLink: String(o.reviewLink || ''), finLink: String(o.finLink || ''), finMin: min, ocr: false,
+    quoteBody: String(o.quoteBody || ''), quoteSubject: String(o.quoteSubject || ''), quoteSign: String(o.quoteSign || '')
+  };
 }
 function moneyNum_(v) {
   var n = parseFloat(String(v == null ? '' : v).replace(/[^0-9.\-]/g, ''));
@@ -306,6 +312,99 @@ function measureFloor_(images, known) {
   if (!got) return measureFail_();
   return { ok: true, ready: true, sqft: got.sqft, lengthFt: got.lengthFt, widthFt: got.widthFt, confidence: got.confidence, note: got.note };
 }
+function normalizeFill_(raw) {
+  var o = raw;
+  if (typeof o === 'string') {
+    var t = o.trim().replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim();
+    var start = t.indexOf('{'), end = t.lastIndexOf('}');
+    if (start < 0 || end <= start) return null;
+    try { o = JSON.parse(t.slice(start, end + 1)); } catch (eJson) { return null; }
+  }
+  if (!o || typeof o !== 'object' || Array.isArray(o)) return null;
+  if (o.fields && typeof o.fields === 'object' && !Array.isArray(o.fields)) o = o.fields;
+  var out = {};
+  function text(v, n) {
+    if (v == null) return '';
+    return String(v).replace(/[ \t]+/g, ' ').trim().slice(0, n || 400);
+  }
+  function put(k, v, n) {
+    var s = text(v, n);
+    if (s) out[k] = s;
+  }
+  put('name', o.name || o.customer || o.customerName, 120);
+  put('phone', o.phone || o.customerPhone, 40);
+  put('email', o.email || o.customerEmail, 120);
+  put('address', o.address || o.customerAddress, 200);
+  var sqRaw = o.sqft != null ? o.sqft : (o.squareFeet != null ? o.squareFeet : o.sqFt);
+  if (sqRaw != null && String(sqRaw).trim() !== '') {
+    var nsq = Number(String(sqRaw).replace(/[^0-9.]/g, ''));
+    if (!isNaN(nsq) && nsq > 0 && nsq < 1000000) out.sqft = Math.round(nsq);
+  }
+  put('system', o.system || o.coating || o.coatingType, 80);
+  put('color', o.color || o.flake || o.flakeColor, 80);
+  var prep = o.prep != null ? o.prep : o.preparation;
+  if (Array.isArray(prep)) prep = prep.map(function (x) { return text(x, 60); }).filter(Boolean).join(', ');
+  put('prep', prep, 240);
+  put('cure', o.cure || o.returnToService, 80);
+  var rateRaw = o.rate != null ? o.rate : (o.pricePerSqft != null ? o.pricePerSqft : (o.pricePerSqFt != null ? o.pricePerSqFt : o.pricePerSquareFoot));
+  if (rateRaw != null && String(rateRaw).trim() !== '') {
+    var nr = Number(String(rateRaw).replace(/[^0-9.]/g, ''));
+    if (!isNaN(nr) && nr > 0 && nr < 10000) out.rate = Math.round(nr * 100) / 100;
+  }
+  put('timeline', o.timeline, 160);
+  put('notes', o.notes, 800);
+  var extras = o.extras != null ? o.extras : (o.extra != null ? o.extra : o.addOns);
+  if (Array.isArray(extras)) {
+    var lines = extras.map(function (x) {
+      if (x == null) return '';
+      if (typeof x !== 'object') return text(x, 200);
+      var title = text(x.title || x.name, 120);
+      var detail = text(x.detail || '', 200);
+      var price = (x.price == null || x.price === '') ? '' : text(x.price, 20);
+      return [title, detail, price].filter(Boolean).join(' - ');
+    }).filter(Boolean);
+    if (lines.length) out.extras = lines.join('\n').slice(0, 800);
+  } else put('extras', extras, 800);
+  return Object.keys(out).length ? out : null;
+}
+function quoteFill_(text) {
+  // GEMINI_API_KEY and optional GEMINI_MODEL are Script Properties. Never paste the key into this file.
+  var spoken = String(text || '').trim();
+  if (!spoken) return { ok: true, ready: false, message: 'Say or type the job first.' };
+  var key = scriptProp_('GEMINI_API_KEY');
+  if (!key) return { ok: true, ready: false, message: 'AI fill not set up yet' };
+  spoken = spoken.slice(0, 8000);
+  var prompt = 'You fill a concrete coating estimate from what the contractor says. Return JSON with only the keys you can tell. Allowed keys: name, phone, email, address, sqft, system, color, prep, cure, rate, extras, timeline, notes. sqft and rate are numbers. prep is a comma-separated list such as diamond grinding and crack repair. extras is add-on work with its price. notes is something the customer can see, such as access or a request. Omit any key you do not know. Do not invent a price, phone, or email. Never return hardness, a Mohs number, or private notes, and do not place those in notes or extras.';
+  prompt += ' Coating systems you can use: Garage floor flake system, Metallic epoxy, Solid color epoxy, Polyaspartic system, Polyurea garage system, Quartz broadcast, Pool deck coating, Patio and porch coating, Commercial kitchen floor, Warehouse / industrial floor, Concrete sealing, Grind and prep only, Crack and spall repair.';
+  prompt += ' Cure choices: Same-day return, 24 hours, 48 hours, 72 hours, 5-7 days.';
+  prompt += '\n\nSpoken notes:\n' + spoken;
+  var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(geminiModel_()) + ':generateContent';
+  var res, code, body;
+  try {
+    res = UrlFetchApp.fetch(url, {
+      method: 'post',
+      contentType: 'application/json',
+      muteHttpExceptions: true,
+      headers: { 'x-goog-api-key': key },
+      payload: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.2, responseMimeType: 'application/json' }
+      })
+    });
+    code = res.getResponseCode();
+    body = res.getContentText() || '';
+  } catch (eFetch) {
+    return { ok: true, ready: false, message: 'Could not fill that in. The notes on this phone were used instead.' };
+  }
+  if (code < 200 || code >= 300) return { ok: true, ready: false, message: 'Could not fill that in. The notes on this phone were used instead.' };
+  var parsed;
+  try { parsed = JSON.parse(body); } catch (eParse) {
+    return { ok: true, ready: false, message: 'Could not fill that in. The notes on this phone were used instead.' };
+  }
+  var got = normalizeFill_(geminiText_(parsed));
+  if (!got) return { ok: true, ready: false, message: 'Could not fill that in. The notes on this phone were used instead.' };
+  return { ok: true, ready: true, fields: got };
+}
 function saveReceiptImage_(image) {
   var parts = String(image || '').split(',');
   if (parts.length < 2 || !parts[1]) throw new Error('No receipt photo');
@@ -411,6 +510,10 @@ function doPost(e) {
       if (!pinOk_(d)) return out_({ ok: false, err: 'Wrong PIN' });
       return out_(measureFloor_(d.images || d.photos, d.known));
     }
+    if (d.a === 'qfill') {
+      if (!pinOk_(d)) return out_({ ok: false, err: 'Wrong PIN' });
+      return out_(quoteFill_(d.text));
+    }
     if (d.a === 'settings' || d.a === 'explist' || d.a === 'expadd' || d.a === 'expdel' || d.a === 'rcscan' || d.a === 'rcrescan' || d.a === 'rcdrop') {
       if (!pinOk_(d)) return out_({ ok: false, err: 'Wrong PIN' });
       if (d.a === 'settings') {
@@ -421,6 +524,9 @@ function doPost(e) {
         var fm = Number(String(d.finMin == null ? '' : d.finMin).replace(/[^0-9.\-]/g, ''));
         curS.finMin = isNaN(fm) ? 1000 : fm;
         curS.ocr = false;
+        curS.quoteBody = String(d.quoteBody || '').trim().slice(0, 4000);
+        curS.quoteSubject = String(d.quoteSubject || '').trim().slice(0, 300);
+        curS.quoteSign = String(d.quoteSign || '').trim().slice(0, 800);
         save_(curS, 'settings.json');
         return out_({ ok: true, settings: settings_() });
       }
@@ -486,7 +592,6 @@ function doPost(e) {
     }
     if (d.a === 'create') {
       if (d.email && !validEmail(d.email)) return out_({ ok: false, err: 'That customer email does not look valid.' });
-      if (!TEST_MODE && !validEmail(d.email)) return out_({ ok: false, err: 'Enter a valid customer email before sending.' });
       if (hardnessVal_(d.hardness) === null) return out_({ ok: false, err: 'Hardness is a whole number from 1 to 10.' });
       var fields = { sqft: d.sqft, system: d.system, color: d.color, prep: d.prep, cure: d.cure, rate: d.rate };
       var items = (d.items && d.items.length) ? d.items : buildItems(fields, d.quote);

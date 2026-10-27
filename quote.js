@@ -200,7 +200,9 @@ function specRows(j){
 }
 function itemsTable(j,colors){
   var dg=colors.dg;
-  var rows=(j.items||[]).map(function(i,n){
+  var list=j.items||[];
+  if(!list.length)return '';
+  var rows=list.map(function(i,n){
     return '<tr><td style="padding:10px 8px;border-bottom:1px solid #eef0f4;vertical-align:top;color:#8a8f98">'+(n+1)+'</td>'+
       '<td style="padding:10px 8px;border-bottom:1px solid #eef0f4"><b>'+escHtml(i.title)+'</b>'+
       (i.detail?'<br><span style="color:#5c6370;font-size:13px">'+escHtml(i.detail)+'</span>':'')+
@@ -234,9 +236,46 @@ function emailShell(o,inner){
     '<a href="'+escHtml(o.co.site)+'" style="color:'+dg+'">'+escHtml(o.co.web)+'</a><br>Free estimates &middot; Garage floors, flake, metallic epoxy, and commercial coatings &middot; Tallahassee</p></div></div>';
 }
 function metaBlock(j,label,no,colors){
-  return '<table width="100%" style="font-size:14px;margin:0 0 16px"><tr><td style="vertical-align:top"><b style="color:'+colors.n+'">Prepared for</b><br>'+
-    escHtml(j.name)+'<br>'+escHtml(j.address)+'<br>'+escHtml(j.email)+'</td><td style="vertical-align:top;text-align:right"><b style="color:'+colors.n+'">'+
-    escHtml(label)+'</b> '+escHtml(no)+'<br>Date: '+escHtml(j.date||'')+'</td></tr></table>';
+  var who=[j.name,j.address,j.email].map(function(s){return String(s||'').trim();}).filter(Boolean);
+  var left=who.length?'<b style="color:'+colors.n+'">Prepared for</b><br>'+who.map(escHtml).join('<br>'):'';
+  var right='<b style="color:'+colors.n+'">'+escHtml(label)+'</b> '+escHtml(no||'');
+  if(j.date) right+='<br>Date: '+escHtml(j.date);
+  if(!left && !String(no||'').trim() && !j.date) return '';
+  return '<table width="100%" style="font-size:14px;margin:0 0 16px"><tr><td style="vertical-align:top">'+left+'</td><td style="vertical-align:top;text-align:right">'+right+'</td></tr></table>';
+}
+function greetLine(word,name){
+  var n=String(name||'').trim();
+  if(!n)return '';
+  return '<p style="font-size:16px">'+word+' '+escHtml(n)+',</p>';
+}
+function emailText(s){
+  return escHtml(s).replace(/\r\n/g,'\n').replace(/\n/g,'<br>');
+}
+var QUOTE_EMAIL_BODY='Thank you for considering Southern Concrete Coatings for your project. We appreciate the opportunity to earn your business and look forward to helping bring your vision to life. Below is the estimate for the coating system we discussed. A PDF copy is attached.';
+var QUOTE_EMAIL_SUBJECT='Your concrete coating estimate from Southern Concrete Coatings - {estimate}';
+var QUOTE_EMAIL_SIGN='Sincerely,\nSouthern Concrete Coatings';
+function quoteEmailCopy(o){
+  o=o||{};
+  var s=o.settings||{};
+  var j=o.job||{};
+  function pick(key,fallback){
+    var v=s[key];
+    v=v==null?'':String(v).replace(/\u0000/g,'').trim();
+    return v||fallback;
+  }
+  function fill(text){
+    return String(text)
+      .replace(/\{name\}/gi,String(j.name||'').trim())
+      .replace(/\{estimate\}/gi,String(j.est||'').trim())
+      .replace(/\{address\}/gi,String(j.address||'').trim());
+  }
+  var sign=QUOTE_EMAIL_SIGN;
+  if(o.co&&o.co.name) sign='Sincerely,\n'+o.co.name;
+  return {
+    body:fill(pick('quoteBody',QUOTE_EMAIL_BODY)),
+    subject:fill(pick('quoteSubject',QUOTE_EMAIL_SUBJECT)).replace(/[\r\n]+/g,' ').trim(),
+    sign:fill(pick('quoteSign',sign))
+  };
 }
 var TERMS=[
   'This estimate is valid for 30 days from the date above.',
@@ -266,8 +305,9 @@ function quoteEmailHtml(o){
   function btn(k,t,c){
     return '<a href="'+o.link(k)+'" style="display:block;margin:8px 0;padding:15px;background:'+c+';color:#fff;text-decoration:none;border-radius:10px;font-weight:bold;font-size:16px;text-align:center">'+t+'</a>';
   }
-  var inner='<p style="font-size:16px">Dear '+escHtml(j.name)+',</p>'+
-    '<p style="line-height:1.6">Thank you for considering Southern Concrete Coatings for your project. We appreciate the opportunity to earn your business and look forward to helping bring your vision to life. Below is the estimate for the coating system we discussed. A PDF copy is attached.</p>'+
+  var copy=quoteEmailCopy(o);
+  var inner=greetLine('Dear',j.name)+
+    '<p style="line-height:1.6">'+emailText(copy.body)+'</p>'+
     metaBlock(j,'Estimate #',j.est,o.colors)+specRows(j)+itemsTable(j,o.colors)+
     (o.photosHtml?'<p style="margin:18px 0 6px"><b style="color:'+n+'">Site photos</b></p>'+o.photosHtml:'')+
     '<div style="background:#f4f5f8;border-radius:10px;padding:16px;margin:20px 0"><p style="margin:0 0 4px;font-size:16px"><b style="color:'+n+'">Ready to coat the floor? Tap one:</b></p>'+
@@ -278,7 +318,7 @@ function quoteEmailHtml(o){
     btn('O','Other — send a question',n)+'</div>'+
     payButtons(o)+
     '<p style="font-size:13px;color:#5c6370;line-height:1.6"><b>Terms:</b> '+TERMS.join(' ')+'</p>'+
-    '<p>Sincerely,<br><b>'+escHtml(o.co.name)+'</b></p>';
+    '<p>'+emailText(copy.sign)+'</p>';
   return emailShell(Object.assign({},o,{title:'Estimate',sub:j.est}),inner);
 }
 function pdfHtml(o){
@@ -299,8 +339,9 @@ function recapEmailHtml(o){
   var referHref='mailto:?subject='+encodeURIComponent('Floor coating I recommend: Southern Concrete Coatings')+
     '&body='+encodeURIComponent('I used Southern Concrete Coatings in Tallahassee and was happy with the floor. Free estimates: '+o.co.site+' or '+o.co.phone);
   var refer='<a href="'+referHref+'" style="display:block;padding:15px;background:'+g+';color:#fff;text-decoration:none;border-radius:10px;font-weight:bold;text-align:center;font-size:16px">Refer a neighbor</a>';
-  var inner='<p style="font-size:16px">Hi '+escHtml(j.name)+',</p>'+
-    '<p style="line-height:1.6">Your coating at '+escHtml(j.address)+' is complete. Here is a look at the floor, before and after.</p>'+
+  var where=String(j.address||'').trim();
+  var inner=greetLine('Hi',j.name)+
+    '<p style="line-height:1.6">'+(where?'Your coating at '+escHtml(where)+' is complete.':'Your coating is complete.')+' Here is a look at the floor, before and after.</p>'+
     specRows(j)+itemsTable(j,o.colors)+
     (av?'<p><b style="color:'+n+'">Scheduled from your preference:</b> '+escHtml(av)+'</p>':'')+
     (j.crewNotes?'<p><b style="color:'+n+'">Crew notes:</b> '+escHtml(j.crewNotes)+'</p>':'')+
@@ -312,7 +353,7 @@ function recapEmailHtml(o){
 function invoiceEmailHtml(o){
   o=customerFace(o);
   var j=o.job,v=j.invoice||{},inv=String(j.est||j.id).replace('EST','INV');
-  var inner='<p style="font-size:16px">Dear '+escHtml(j.name)+',</p>'+
+  var inner=greetLine('Dear',j.name)+
     '<p>Thank you for your business. Here is the invoice for the completed coating.</p>'+
     metaBlock(j,'Invoice #',inv,o.colors)+specRows(j)+itemsTable(j,o.colors)+
     '<p style="font-size:18px;text-align:right"><b>Amount due: <span style="color:'+o.colors.dg+'">'+escHtml(v.amount)+'</span></b></p>'+
@@ -328,7 +369,8 @@ function responseFormHtml(o){
     return '<label style="display:block;width:100%;margin:8px 0;padding:18px;font-size:19px;font-weight:bold;border:3px solid '+o.colors.n+';background:#fff;color:'+o.colors.n+';border-radius:12px;text-align:center;box-sizing:border-box"><input type="radio" name="avail" value="'+escHtml(s)+'"'+(i===slots.length-1?' checked':'')+' style="margin-right:8px">'+escHtml(s)+'</label>';
   }).join('');
   var ask=(ans==='B'||ans==='O')?'<p><b>'+(ans==='B'?'What would you like changed?':'Your question or message:')+'</b></p><textarea name="text" rows="4" style="width:100%;box-sizing:border-box;font-size:17px;padding:14px;border:2px solid #cfd3de;border-radius:10px"></textarea>':'';
-  return '<h2 style="color:'+o.colors.n+'">'+escHtml(labels[ans]||ans)+'</h2><p>Estimate '+escHtml(j.est||j.id)+' &middot; '+escHtml(j.address)+'</p>'+
+  var where=String(j.address||'').trim();
+  return '<h2 style="color:'+o.colors.n+'">'+escHtml(labels[ans]||ans)+'</h2><p>Estimate '+escHtml(j.est||j.id)+(where?' &middot; '+escHtml(where):'')+'</p>'+
     '<form method="get" action="'+escHtml(action)+'">'+
     '<input type="hidden" name="a" value="respond"><input type="hidden" name="id" value="'+escHtml(j.id)+'">'+
     '<input type="hidden" name="ans" value="'+escHtml(ans)+'"><input type="hidden" name="done" value="1">'+ask+
@@ -349,7 +391,7 @@ function reviewEmailHtml(o){
   o=customerFace(o);
   var j=o.job||{}, link=(o.settings&&o.settings.reviewLink)||'';
   var btn=link?'<a href="'+escHtml(link)+'" style="display:block;margin:16px 0;padding:15px;background:'+o.colors.g+';color:#fff;text-decoration:none;border-radius:10px;font-weight:bold;font-size:16px;text-align:center">Leave a review</a>':'';
-  var inner='<p style="font-size:16px">Hi '+escHtml(j.name)+',</p>'+
+  var inner=greetLine('Hi',j.name)+
     '<p style="line-height:1.6">Thank you for choosing Southern Concrete Coatings. If you were happy with the floor, a short Google review helps neighbors find us.</p>'+
     btn+'<p>Questions? Call '+escHtml(o.co.phone)+'.</p>';
   return emailShell(Object.assign({},o,{title:'How did we do?',sub:j.est||''}),inner);
@@ -361,6 +403,8 @@ var SCCQuote={
   parseSqft:parseSqft,parseRate:parseRate,parseLump:parseLump,
   quoteEmailHtml:quoteEmailHtml,pdfHtml:pdfHtml,recapEmailHtml:recapEmailHtml,invoiceEmailHtml:invoiceEmailHtml,
   responseFormHtml:responseFormHtml,responseThanksHtml:responseThanksHtml,reviewEmailHtml:reviewEmailHtml,
-  customerJob:customerJob,TERMS:TERMS,escHtml:escHtml
+  customerJob:customerJob,TERMS:TERMS,escHtml:escHtml,
+  QUOTE_EMAIL_BODY:QUOTE_EMAIL_BODY,QUOTE_EMAIL_SUBJECT:QUOTE_EMAIL_SUBJECT,QUOTE_EMAIL_SIGN:QUOTE_EMAIL_SIGN,
+  quoteEmailCopy:quoteEmailCopy
 };
 if(typeof module!=='undefined'&&module.exports)module.exports=SCCQuote;

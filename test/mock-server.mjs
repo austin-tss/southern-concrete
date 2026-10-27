@@ -22,6 +22,7 @@ const expenses = [];
 const receipts = new Map();
 const gallery = [];
 let measureOn = false;
+let fillOn = false;
 let settings = { payLink: '', reviewLink: '', finLink: '', finMin: 1000, ocr: false };
 let seq = 1;
 let rcSeq = 1;
@@ -39,6 +40,7 @@ function hardnessVal(v) {
 }
 function seed(job) { jobs.unshift(job); return job; }
 function armMeasure(on) { measureOn = !!on; }
+function armFill(on) { fillOn = !!on; }
 
 function envelope(job) {
   const env = q.deliveryAddress(TEST_MODE, TEST_TO, job && job.email, CO.email);
@@ -49,7 +51,14 @@ function envelope(job) {
 }
 function record(kind, job, subject, html) {
   const env = envelope(job);
+  if (!env.to) return;
   inbox.push({ kind, to: env.to, replyTo: env.replyTo, subject: (TEST_MODE ? 'TEST - ' : '') + subject, html, customer: job.email || '' });
+}
+function quoteOut(j, html) {
+  const copy = q.quoteEmailCopy({ co: CO, settings, job: j });
+  const env = q.deliveryAddress(TEST_MODE, TEST_TO, j && j.email, CO.email);
+  j.emailed = !!env.to;
+  if (j.emailed) record('quote', j, copy.subject, html);
 }
 function storePhotos(list, kind) {
   return (list || []).map((d, i) => ({ url: d, kind, n: i }));
@@ -95,6 +104,22 @@ function handle(d) {
       note: 'ZXAI double door about 16 ft, two bays'
     };
   }
+  if (d.a === 'qfill') {
+    if (!pinOk(d)) return { ok: false, err: 'Wrong PIN' };
+    const text = String(d.text || '').trim();
+    if (!text) return { ok: true, ready: false, message: 'Say or type the job first.' };
+    if (!fillOn) return { ok: true, ready: false, message: 'AI fill not set up yet' };
+    return {
+      ok: true, ready: true,
+      fields: {
+        name: 'Pat Homeowner', phone: '850-555-0148', email: 'pat@example.com',
+        address: '1 Call St, Tallahassee, FL', sqft: 480, system: 'Garage floor flake system',
+        color: 'Dominion', prep: 'Diamond grinding, Crack repair', cure: '24 hours', rate: 6.5,
+        extras: 'moisture mitigation $350', notes: 'Gate is on the left',
+        hardness: 8, hardnessHow: 'ZXHARD', internalNotes: 'ZXNOTE', aiNote: 'ZXAI'
+      }
+    };
+  }
   if (['settings', 'explist', 'expadd', 'expdel', 'rcscan', 'rcrescan', 'rcdrop'].includes(d.a)) {
     if (!pinOk(d)) return { ok: false, err: 'Wrong PIN' };
     if (d.a === 'settings') {
@@ -104,7 +129,10 @@ function handle(d) {
         reviewLink: String(d.reviewLink || '').trim(),
         finLink: String(d.finLink || '').trim(),
         finMin: Number.isNaN(fm) ? 1000 : fm,
-        ocr: false
+        ocr: false,
+        quoteBody: String(d.quoteBody || '').trim().slice(0, 4000),
+        quoteSubject: String(d.quoteSubject || '').trim().slice(0, 300),
+        quoteSign: String(d.quoteSign || '').trim().slice(0, 800)
       };
       return { ok: true, settings };
     }
@@ -156,7 +184,6 @@ function handle(d) {
   }
   if (d.a === 'create') {
     if (d.email && !q.validEmail(d.email)) return { ok: false, err: 'That customer email does not look valid.' };
-    if (!TEST_MODE && !q.validEmail(d.email)) return { ok: false, err: 'Enter a valid customer email before sending.' };
     if (hardnessVal(d.hardness) === null) return { ok: false, err: 'Hardness is a whole number from 1 to 10.' };
     const fields = { sqft: d.sqft, system: d.system, color: d.color, prep: d.prep, cure: d.cure, rate: d.rate };
     const items = (d.items && d.items.length) ? d.items : q.buildItems(fields, d.quote);
@@ -177,7 +204,7 @@ function handle(d) {
       testMode: TEST_MODE, testTo: TEST_TO, logoSrc: 'cid:logo', settings, photosHtml: j.photos.length ? '<img alt="site">' : '',
       link: (k) => '/exec?a=respond&id=' + encodeURIComponent(j.id) + '&ans=' + k
     });
-    record('quote', j, 'Your concrete coating estimate from Southern Concrete Coatings - ' + j.est, html);
+    quoteOut(j, html);
     jobs.unshift(j);
     return { ok: true, testMode: TEST_MODE, job: j };
   }
@@ -242,7 +269,7 @@ function handle(d) {
       testMode: TEST_MODE, testTo: TEST_TO, logoSrc: 'cid:logo', photosHtml: (j.photos || []).length ? '<img alt="site">' : '',
       link: (k) => '/exec?a=respond&id=' + encodeURIComponent(j.id) + '&ans=' + k
     });
-    record('quote', j, 'Your concrete coating estimate from Southern Concrete Coatings - ' + j.est, html);
+    quoteOut(j, html);
   } else return { ok: false, err: 'Bad action' };
   return { ok: true, testMode: TEST_MODE, job: j };
 }
@@ -311,4 +338,4 @@ if (process.argv[1] && process.argv[1].endsWith('mock-server.mjs')) {
   start(port).then(() => console.log('mock http://127.0.0.1:' + port + '/?api=http://127.0.0.1:' + port + '/exec'));
 }
 
-export { start, inbox, seed, armMeasure };
+export { start, inbox, seed, armMeasure, armFill };

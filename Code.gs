@@ -209,7 +209,9 @@ function specRows(j){
 }
 function itemsTable(j,colors){
   var dg=colors.dg;
-  var rows=(j.items||[]).map(function(i,n){
+  var list=j.items||[];
+  if(!list.length)return '';
+  var rows=list.map(function(i,n){
     return '<tr><td style="padding:10px 8px;border-bottom:1px solid #eef0f4;vertical-align:top;color:#8a8f98">'+(n+1)+'</td>'+
       '<td style="padding:10px 8px;border-bottom:1px solid #eef0f4"><b>'+escHtml(i.title)+'</b>'+
       (i.detail?'<br><span style="color:#5c6370;font-size:13px">'+escHtml(i.detail)+'</span>':'')+
@@ -243,9 +245,46 @@ function emailShell(o,inner){
     '<a href="'+escHtml(o.co.site)+'" style="color:'+dg+'">'+escHtml(o.co.web)+'</a><br>Free estimates &middot; Garage floors, flake, metallic epoxy, and commercial coatings &middot; Tallahassee</p></div></div>';
 }
 function metaBlock(j,label,no,colors){
-  return '<table width="100%" style="font-size:14px;margin:0 0 16px"><tr><td style="vertical-align:top"><b style="color:'+colors.n+'">Prepared for</b><br>'+
-    escHtml(j.name)+'<br>'+escHtml(j.address)+'<br>'+escHtml(j.email)+'</td><td style="vertical-align:top;text-align:right"><b style="color:'+colors.n+'">'+
-    escHtml(label)+'</b> '+escHtml(no)+'<br>Date: '+escHtml(j.date||'')+'</td></tr></table>';
+  var who=[j.name,j.address,j.email].map(function(s){return String(s||'').trim();}).filter(Boolean);
+  var left=who.length?'<b style="color:'+colors.n+'">Prepared for</b><br>'+who.map(escHtml).join('<br>'):'';
+  var right='<b style="color:'+colors.n+'">'+escHtml(label)+'</b> '+escHtml(no||'');
+  if(j.date) right+='<br>Date: '+escHtml(j.date);
+  if(!left && !String(no||'').trim() && !j.date) return '';
+  return '<table width="100%" style="font-size:14px;margin:0 0 16px"><tr><td style="vertical-align:top">'+left+'</td><td style="vertical-align:top;text-align:right">'+right+'</td></tr></table>';
+}
+function greetLine(word,name){
+  var n=String(name||'').trim();
+  if(!n)return '';
+  return '<p style="font-size:16px">'+word+' '+escHtml(n)+',</p>';
+}
+function emailText(s){
+  return escHtml(s).replace(/\r\n/g,'\n').replace(/\n/g,'<br>');
+}
+var QUOTE_EMAIL_BODY='Thank you for considering Southern Concrete Coatings for your project. We appreciate the opportunity to earn your business and look forward to helping bring your vision to life. Below is the estimate for the coating system we discussed. A PDF copy is attached.';
+var QUOTE_EMAIL_SUBJECT='Your concrete coating estimate from Southern Concrete Coatings - {estimate}';
+var QUOTE_EMAIL_SIGN='Sincerely,\nSouthern Concrete Coatings';
+function quoteEmailCopy(o){
+  o=o||{};
+  var s=o.settings||{};
+  var j=o.job||{};
+  function pick(key,fallback){
+    var v=s[key];
+    v=v==null?'':String(v).replace(/\u0000/g,'').trim();
+    return v||fallback;
+  }
+  function fill(text){
+    return String(text)
+      .replace(/\{name\}/gi,String(j.name||'').trim())
+      .replace(/\{estimate\}/gi,String(j.est||'').trim())
+      .replace(/\{address\}/gi,String(j.address||'').trim());
+  }
+  var sign=QUOTE_EMAIL_SIGN;
+  if(o.co&&o.co.name) sign='Sincerely,\n'+o.co.name;
+  return {
+    body:fill(pick('quoteBody',QUOTE_EMAIL_BODY)),
+    subject:fill(pick('quoteSubject',QUOTE_EMAIL_SUBJECT)).replace(/[\r\n]+/g,' ').trim(),
+    sign:fill(pick('quoteSign',sign))
+  };
 }
 var TERMS=[
   'This estimate is valid for 30 days from the date above.',
@@ -275,8 +314,9 @@ function quoteEmailHtml(o){
   function btn(k,t,c){
     return '<a href="'+o.link(k)+'" style="display:block;margin:8px 0;padding:15px;background:'+c+';color:#fff;text-decoration:none;border-radius:10px;font-weight:bold;font-size:16px;text-align:center">'+t+'</a>';
   }
-  var inner='<p style="font-size:16px">Dear '+escHtml(j.name)+',</p>'+
-    '<p style="line-height:1.6">Thank you for considering Southern Concrete Coatings for your project. We appreciate the opportunity to earn your business and look forward to helping bring your vision to life. Below is the estimate for the coating system we discussed. A PDF copy is attached.</p>'+
+  var copy=quoteEmailCopy(o);
+  var inner=greetLine('Dear',j.name)+
+    '<p style="line-height:1.6">'+emailText(copy.body)+'</p>'+
     metaBlock(j,'Estimate #',j.est,o.colors)+specRows(j)+itemsTable(j,o.colors)+
     (o.photosHtml?'<p style="margin:18px 0 6px"><b style="color:'+n+'">Site photos</b></p>'+o.photosHtml:'')+
     '<div style="background:#f4f5f8;border-radius:10px;padding:16px;margin:20px 0"><p style="margin:0 0 4px;font-size:16px"><b style="color:'+n+'">Ready to coat the floor? Tap one:</b></p>'+
@@ -287,7 +327,7 @@ function quoteEmailHtml(o){
     btn('O','Other — send a question',n)+'</div>'+
     payButtons(o)+
     '<p style="font-size:13px;color:#5c6370;line-height:1.6"><b>Terms:</b> '+TERMS.join(' ')+'</p>'+
-    '<p>Sincerely,<br><b>'+escHtml(o.co.name)+'</b></p>';
+    '<p>'+emailText(copy.sign)+'</p>';
   return emailShell(Object.assign({},o,{title:'Estimate',sub:j.est}),inner);
 }
 function pdfHtml(o){
@@ -308,8 +348,9 @@ function recapEmailHtml(o){
   var referHref='mailto:?subject='+encodeURIComponent('Floor coating I recommend: Southern Concrete Coatings')+
     '&body='+encodeURIComponent('I used Southern Concrete Coatings in Tallahassee and was happy with the floor. Free estimates: '+o.co.site+' or '+o.co.phone);
   var refer='<a href="'+referHref+'" style="display:block;padding:15px;background:'+g+';color:#fff;text-decoration:none;border-radius:10px;font-weight:bold;text-align:center;font-size:16px">Refer a neighbor</a>';
-  var inner='<p style="font-size:16px">Hi '+escHtml(j.name)+',</p>'+
-    '<p style="line-height:1.6">Your coating at '+escHtml(j.address)+' is complete. Here is a look at the floor, before and after.</p>'+
+  var where=String(j.address||'').trim();
+  var inner=greetLine('Hi',j.name)+
+    '<p style="line-height:1.6">'+(where?'Your coating at '+escHtml(where)+' is complete.':'Your coating is complete.')+' Here is a look at the floor, before and after.</p>'+
     specRows(j)+itemsTable(j,o.colors)+
     (av?'<p><b style="color:'+n+'">Scheduled from your preference:</b> '+escHtml(av)+'</p>':'')+
     (j.crewNotes?'<p><b style="color:'+n+'">Crew notes:</b> '+escHtml(j.crewNotes)+'</p>':'')+
@@ -321,7 +362,7 @@ function recapEmailHtml(o){
 function invoiceEmailHtml(o){
   o=customerFace(o);
   var j=o.job,v=j.invoice||{},inv=String(j.est||j.id).replace('EST','INV');
-  var inner='<p style="font-size:16px">Dear '+escHtml(j.name)+',</p>'+
+  var inner=greetLine('Dear',j.name)+
     '<p>Thank you for your business. Here is the invoice for the completed coating.</p>'+
     metaBlock(j,'Invoice #',inv,o.colors)+specRows(j)+itemsTable(j,o.colors)+
     '<p style="font-size:18px;text-align:right"><b>Amount due: <span style="color:'+o.colors.dg+'">'+escHtml(v.amount)+'</span></b></p>'+
@@ -337,7 +378,8 @@ function responseFormHtml(o){
     return '<label style="display:block;width:100%;margin:8px 0;padding:18px;font-size:19px;font-weight:bold;border:3px solid '+o.colors.n+';background:#fff;color:'+o.colors.n+';border-radius:12px;text-align:center;box-sizing:border-box"><input type="radio" name="avail" value="'+escHtml(s)+'"'+(i===slots.length-1?' checked':'')+' style="margin-right:8px">'+escHtml(s)+'</label>';
   }).join('');
   var ask=(ans==='B'||ans==='O')?'<p><b>'+(ans==='B'?'What would you like changed?':'Your question or message:')+'</b></p><textarea name="text" rows="4" style="width:100%;box-sizing:border-box;font-size:17px;padding:14px;border:2px solid #cfd3de;border-radius:10px"></textarea>':'';
-  return '<h2 style="color:'+o.colors.n+'">'+escHtml(labels[ans]||ans)+'</h2><p>Estimate '+escHtml(j.est||j.id)+' &middot; '+escHtml(j.address)+'</p>'+
+  var where=String(j.address||'').trim();
+  return '<h2 style="color:'+o.colors.n+'">'+escHtml(labels[ans]||ans)+'</h2><p>Estimate '+escHtml(j.est||j.id)+(where?' &middot; '+escHtml(where):'')+'</p>'+
     '<form method="get" action="'+escHtml(action)+'">'+
     '<input type="hidden" name="a" value="respond"><input type="hidden" name="id" value="'+escHtml(j.id)+'">'+
     '<input type="hidden" name="ans" value="'+escHtml(ans)+'"><input type="hidden" name="done" value="1">'+ask+
@@ -358,7 +400,7 @@ function reviewEmailHtml(o){
   o=customerFace(o);
   var j=o.job||{}, link=(o.settings&&o.settings.reviewLink)||'';
   var btn=link?'<a href="'+escHtml(link)+'" style="display:block;margin:16px 0;padding:15px;background:'+o.colors.g+';color:#fff;text-decoration:none;border-radius:10px;font-weight:bold;font-size:16px;text-align:center">Leave a review</a>':'';
-  var inner='<p style="font-size:16px">Hi '+escHtml(j.name)+',</p>'+
+  var inner=greetLine('Hi',j.name)+
     '<p style="line-height:1.6">Thank you for choosing Southern Concrete Coatings. If you were happy with the floor, a short Google review helps neighbors find us.</p>'+
     btn+'<p>Questions? Call '+escHtml(o.co.phone)+'.</p>';
   return emailShell(Object.assign({},o,{title:'How did we do?',sub:j.est||''}),inner);
@@ -370,7 +412,9 @@ var SCCQuote={
   parseSqft:parseSqft,parseRate:parseRate,parseLump:parseLump,
   quoteEmailHtml:quoteEmailHtml,pdfHtml:pdfHtml,recapEmailHtml:recapEmailHtml,invoiceEmailHtml:invoiceEmailHtml,
   responseFormHtml:responseFormHtml,responseThanksHtml:responseThanksHtml,reviewEmailHtml:reviewEmailHtml,
-  customerJob:customerJob,TERMS:TERMS,escHtml:escHtml
+  customerJob:customerJob,TERMS:TERMS,escHtml:escHtml,
+  QUOTE_EMAIL_BODY:QUOTE_EMAIL_BODY,QUOTE_EMAIL_SUBJECT:QUOTE_EMAIL_SUBJECT,QUOTE_EMAIL_SIGN:QUOTE_EMAIL_SIGN,
+  quoteEmailCopy:quoteEmailCopy
 };
 if(typeof module!=='undefined'&&module.exports)module.exports=SCCQuote;
 
@@ -466,6 +510,7 @@ function envelope_(j) {
 }
 function sendMail_(msg) {
   var env = envelope_(msg.job);
+  if (!env.to) return;
   var payload = {
     to: env.to,
     replyTo: env.replyTo,
@@ -490,7 +535,6 @@ function makePdf_(j) {
 }
 function customerOk_(j) {
   if (j.email && !validEmail(j.email)) throw new Error('That customer email does not look valid.');
-  if (!TEST_MODE && !validEmail(j.email)) throw new Error('Enter a valid customer email before sending.');
 }
 function sendQuote_(j) {
   customerOk_(j);
@@ -499,9 +543,12 @@ function sendQuote_(j) {
   var pdf = null;
   if (j.pdfId) { try { pdf = DriveApp.getFileById(j.pdfId).getBlob().setName('Southern Concrete Coatings Estimate ' + j.est + '.pdf'); } catch (e) { pdf = null; } }
   if (!pdf) pdf = makePdf_(j);
+  var copy = quoteEmailCopy(mailOpts_(j));
+  j.emailed = !!envelope_(j).to;
+  if (!j.emailed) return;
   sendMail_({
     job: j,
-    subject: 'Your concrete coating estimate from Southern Concrete Coatings - ' + j.est,
+    subject: copy.subject,
     html: quoteEmailHtml(Object.assign(mailOpts_(j), { photosHtml: im.h, link: function (k) { return respUrl_(j, k); } })),
     inlineImages: im.inl,
     attachments: [pdf]
@@ -567,7 +614,10 @@ function settings_() {
   var o = loadObj_('settings.json');
   var min = o.finMin == null || o.finMin === '' ? 1000 : Number(String(o.finMin).replace(/[^0-9.\-]/g, ''));
   if (isNaN(min)) min = 1000;
-  return { payLink: String(o.payLink || ''), reviewLink: String(o.reviewLink || ''), finLink: String(o.finLink || ''), finMin: min, ocr: false };
+  return {
+    payLink: String(o.payLink || ''), reviewLink: String(o.reviewLink || ''), finLink: String(o.finLink || ''), finMin: min, ocr: false,
+    quoteBody: String(o.quoteBody || ''), quoteSubject: String(o.quoteSubject || ''), quoteSign: String(o.quoteSign || '')
+  };
 }
 function moneyNum_(v) {
   var n = parseFloat(String(v == null ? '' : v).replace(/[^0-9.\-]/g, ''));
@@ -682,6 +732,99 @@ function measureFloor_(images, known) {
   if (!got) return measureFail_();
   return { ok: true, ready: true, sqft: got.sqft, lengthFt: got.lengthFt, widthFt: got.widthFt, confidence: got.confidence, note: got.note };
 }
+function normalizeFill_(raw) {
+  var o = raw;
+  if (typeof o === 'string') {
+    var t = o.trim().replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim();
+    var start = t.indexOf('{'), end = t.lastIndexOf('}');
+    if (start < 0 || end <= start) return null;
+    try { o = JSON.parse(t.slice(start, end + 1)); } catch (eJson) { return null; }
+  }
+  if (!o || typeof o !== 'object' || Array.isArray(o)) return null;
+  if (o.fields && typeof o.fields === 'object' && !Array.isArray(o.fields)) o = o.fields;
+  var out = {};
+  function text(v, n) {
+    if (v == null) return '';
+    return String(v).replace(/[ \t]+/g, ' ').trim().slice(0, n || 400);
+  }
+  function put(k, v, n) {
+    var s = text(v, n);
+    if (s) out[k] = s;
+  }
+  put('name', o.name || o.customer || o.customerName, 120);
+  put('phone', o.phone || o.customerPhone, 40);
+  put('email', o.email || o.customerEmail, 120);
+  put('address', o.address || o.customerAddress, 200);
+  var sqRaw = o.sqft != null ? o.sqft : (o.squareFeet != null ? o.squareFeet : o.sqFt);
+  if (sqRaw != null && String(sqRaw).trim() !== '') {
+    var nsq = Number(String(sqRaw).replace(/[^0-9.]/g, ''));
+    if (!isNaN(nsq) && nsq > 0 && nsq < 1000000) out.sqft = Math.round(nsq);
+  }
+  put('system', o.system || o.coating || o.coatingType, 80);
+  put('color', o.color || o.flake || o.flakeColor, 80);
+  var prep = o.prep != null ? o.prep : o.preparation;
+  if (Array.isArray(prep)) prep = prep.map(function (x) { return text(x, 60); }).filter(Boolean).join(', ');
+  put('prep', prep, 240);
+  put('cure', o.cure || o.returnToService, 80);
+  var rateRaw = o.rate != null ? o.rate : (o.pricePerSqft != null ? o.pricePerSqft : (o.pricePerSqFt != null ? o.pricePerSqFt : o.pricePerSquareFoot));
+  if (rateRaw != null && String(rateRaw).trim() !== '') {
+    var nr = Number(String(rateRaw).replace(/[^0-9.]/g, ''));
+    if (!isNaN(nr) && nr > 0 && nr < 10000) out.rate = Math.round(nr * 100) / 100;
+  }
+  put('timeline', o.timeline, 160);
+  put('notes', o.notes, 800);
+  var extras = o.extras != null ? o.extras : (o.extra != null ? o.extra : o.addOns);
+  if (Array.isArray(extras)) {
+    var lines = extras.map(function (x) {
+      if (x == null) return '';
+      if (typeof x !== 'object') return text(x, 200);
+      var title = text(x.title || x.name, 120);
+      var detail = text(x.detail || '', 200);
+      var price = (x.price == null || x.price === '') ? '' : text(x.price, 20);
+      return [title, detail, price].filter(Boolean).join(' - ');
+    }).filter(Boolean);
+    if (lines.length) out.extras = lines.join('\n').slice(0, 800);
+  } else put('extras', extras, 800);
+  return Object.keys(out).length ? out : null;
+}
+function quoteFill_(text) {
+  // GEMINI_API_KEY and optional GEMINI_MODEL are Script Properties. Never paste the key into this file.
+  var spoken = String(text || '').trim();
+  if (!spoken) return { ok: true, ready: false, message: 'Say or type the job first.' };
+  var key = scriptProp_('GEMINI_API_KEY');
+  if (!key) return { ok: true, ready: false, message: 'AI fill not set up yet' };
+  spoken = spoken.slice(0, 8000);
+  var prompt = 'You fill a concrete coating estimate from what the contractor says. Return JSON with only the keys you can tell. Allowed keys: name, phone, email, address, sqft, system, color, prep, cure, rate, extras, timeline, notes. sqft and rate are numbers. prep is a comma-separated list such as diamond grinding and crack repair. extras is add-on work with its price. notes is something the customer can see, such as access or a request. Omit any key you do not know. Do not invent a price, phone, or email. Never return hardness, a Mohs number, or private notes, and do not place those in notes or extras.';
+  prompt += ' Coating systems you can use: Garage floor flake system, Metallic epoxy, Solid color epoxy, Polyaspartic system, Polyurea garage system, Quartz broadcast, Pool deck coating, Patio and porch coating, Commercial kitchen floor, Warehouse / industrial floor, Concrete sealing, Grind and prep only, Crack and spall repair.';
+  prompt += ' Cure choices: Same-day return, 24 hours, 48 hours, 72 hours, 5-7 days.';
+  prompt += '\n\nSpoken notes:\n' + spoken;
+  var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(geminiModel_()) + ':generateContent';
+  var res, code, body;
+  try {
+    res = UrlFetchApp.fetch(url, {
+      method: 'post',
+      contentType: 'application/json',
+      muteHttpExceptions: true,
+      headers: { 'x-goog-api-key': key },
+      payload: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.2, responseMimeType: 'application/json' }
+      })
+    });
+    code = res.getResponseCode();
+    body = res.getContentText() || '';
+  } catch (eFetch) {
+    return { ok: true, ready: false, message: 'Could not fill that in. The notes on this phone were used instead.' };
+  }
+  if (code < 200 || code >= 300) return { ok: true, ready: false, message: 'Could not fill that in. The notes on this phone were used instead.' };
+  var parsed;
+  try { parsed = JSON.parse(body); } catch (eParse) {
+    return { ok: true, ready: false, message: 'Could not fill that in. The notes on this phone were used instead.' };
+  }
+  var got = normalizeFill_(geminiText_(parsed));
+  if (!got) return { ok: true, ready: false, message: 'Could not fill that in. The notes on this phone were used instead.' };
+  return { ok: true, ready: true, fields: got };
+}
 function saveReceiptImage_(image) {
   var parts = String(image || '').split(',');
   if (parts.length < 2 || !parts[1]) throw new Error('No receipt photo');
@@ -787,6 +930,10 @@ function doPost(e) {
       if (!pinOk_(d)) return out_({ ok: false, err: 'Wrong PIN' });
       return out_(measureFloor_(d.images || d.photos, d.known));
     }
+    if (d.a === 'qfill') {
+      if (!pinOk_(d)) return out_({ ok: false, err: 'Wrong PIN' });
+      return out_(quoteFill_(d.text));
+    }
     if (d.a === 'settings' || d.a === 'explist' || d.a === 'expadd' || d.a === 'expdel' || d.a === 'rcscan' || d.a === 'rcrescan' || d.a === 'rcdrop') {
       if (!pinOk_(d)) return out_({ ok: false, err: 'Wrong PIN' });
       if (d.a === 'settings') {
@@ -797,6 +944,9 @@ function doPost(e) {
         var fm = Number(String(d.finMin == null ? '' : d.finMin).replace(/[^0-9.\-]/g, ''));
         curS.finMin = isNaN(fm) ? 1000 : fm;
         curS.ocr = false;
+        curS.quoteBody = String(d.quoteBody || '').trim().slice(0, 4000);
+        curS.quoteSubject = String(d.quoteSubject || '').trim().slice(0, 300);
+        curS.quoteSign = String(d.quoteSign || '').trim().slice(0, 800);
         save_(curS, 'settings.json');
         return out_({ ok: true, settings: settings_() });
       }
@@ -862,7 +1012,6 @@ function doPost(e) {
     }
     if (d.a === 'create') {
       if (d.email && !validEmail(d.email)) return out_({ ok: false, err: 'That customer email does not look valid.' });
-      if (!TEST_MODE && !validEmail(d.email)) return out_({ ok: false, err: 'Enter a valid customer email before sending.' });
       if (hardnessVal_(d.hardness) === null) return out_({ ok: false, err: 'Hardness is a whole number from 1 to 10.' });
       var fields = { sqft: d.sqft, system: d.system, color: d.color, prep: d.prep, cure: d.cure, rate: d.rate };
       var items = (d.items && d.items.length) ? d.items : buildItems(fields, d.quote);

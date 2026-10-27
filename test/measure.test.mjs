@@ -21,7 +21,7 @@ function grab(name) {
 
 const sandbox = {};
 vm.createContext(sandbox);
-vm.runInContext(grab('normalizeMeasure_') + '\n' + grab('geminiText_'), sandbox);
+vm.runInContext(grab('normalizeMeasure_') + '\n' + grab('geminiText_') + '\n' + grab('normalizeFill_'), sandbox);
 
 test('Gemini measure JSON becomes length, width, square feet, and a confidence', () => {
   const wrapped = '```json\n{"lengthFt":24,"widthFt":18,"sqft":432,"confidence":"medium","note":"Double door looks 16 ft."}\n```';
@@ -54,4 +54,37 @@ test('the Gemini key stays in Script Properties and the reasoning stays off the 
   assert.doesNotMatch(send, /ainote|aiNote|known|measure/);
   assert.match(app, /AI estimate, verify on site/);
   assert.match(code, /d\.a === 'measure'/);
+});
+
+test('talk-through fill returns quote fields and leaves internal notes out', () => {
+  const got = sandbox.normalizeFill_('```json\n{"name":"Pat Homeowner","phone":"850-555-0148","email":"pat@example.com","address":"1 Call St","sqft":"480","system":"Garage floor flake system","color":"Dominion","prep":["Diamond grinding","Crack repair"],"rate":"6.50","cure":"24 hours","extras":[{"title":"Moisture mitigation","price":350}],"notes":"Gate is on the left","hardness":8,"hardnessHow":"ZXHARD","internalNotes":"ZXNOTE","aiNote":"ZXAI"}\n```');
+  assert.equal(got.name, 'Pat Homeowner');
+  assert.equal(got.sqft, 480);
+  assert.equal(got.rate, 6.5);
+  assert.match(got.prep, /Diamond grinding/);
+  assert.match(got.extras, /Moisture mitigation/);
+  assert.equal(got.hardness, undefined);
+  assert.equal(got.hardnessHow, undefined);
+  assert.equal(got.internalNotes, undefined);
+  assert.equal(got.aiNote, undefined);
+  assert.equal(sandbox.normalizeFill_('not json'), null);
+  const fill = code.slice(code.indexOf('function quoteFill_'), code.indexOf('function saveReceiptImage_'));
+  assert.match(fill, /AI fill not set up yet/);
+  assert.match(fill, /scriptProp_\('GEMINI_API_KEY'\)/);
+  assert.match(fill, /geminiModel_\(\)/);
+  assert.doesNotMatch(fill, /MailApp|sendMail_|sendQuote_/);
+  assert.match(code, /d\.a === 'qfill'/);
+  assert.match(app, /Talk it through/);
+  assert.match(app, /Fill in the quote/);
+  assert.match(app, /Customer email/);
+  assert.match(app, /Reset to default/);
+  assert.match(code, /quoteBody/);
+  assert.doesNotMatch(html + '\n' + app, /required\s*=/);
+  const prev = app.slice(app.indexOf('function prev('), app.indexOf('function itSum'));
+  assert.doesNotMatch(prev, /toast\(/);
+  const send = app.slice(app.indexOf('async function sendQ'), app.indexOf('async function fixEmail'));
+  assert.doesNotMatch(send, /Add the customer name|Add a valid customer email|Add at least one line/);
+  const quote = fs.readFileSync(new URL('../quote.js', import.meta.url), 'utf8').trim();
+  const embedded = code.slice(code.indexOf('/* Quote rewriter'), code.indexOf('var TEST_MODE')).trim();
+  assert.equal(embedded, quote);
 });

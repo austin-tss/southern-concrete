@@ -661,12 +661,171 @@ async function measurePhotos(inp) {
     if (btn) { btn.disabled = false; btn.textContent = 'Measure from photo'; }
   }
 }
+function pickOption(list, value) {
+  const v = String(value || '').trim();
+  if (!v) return '';
+  const norm = (s) => String(s).toLowerCase().replace(/[–—-]/g, '-').replace(/\s+/g, ' ').trim();
+  const nv = norm(v);
+  const exact = list.find((s) => norm(s) === nv);
+  if (exact) return exact;
+  return list.find((s) => norm(s).includes(nv) || nv.includes(norm(s))) || '';
+}
+function setChoice(id, value, list) {
+  const el = document.getElementById(id);
+  const raw = String(value || '').trim();
+  if (!el || !raw) return;
+  const picked = pickOption(list, raw) || raw;
+  if (![...el.options].some((o) => o.value === picked)) {
+    const opt = document.createElement('option');
+    opt.value = picked;
+    opt.textContent = picked;
+    el.appendChild(opt);
+  }
+  el.value = picked;
+}
+function setPrep(value) {
+  const wants = String(value || '').split(/[,;\n]/).map((s) => s.trim().toLowerCase()).filter(Boolean);
+  document.querySelectorAll('#prepbox input').forEach((box) => {
+    const label = box.value.toLowerCase();
+    box.checked = wants.some((w) => label.includes(w) || w.includes(label));
+  });
+}
+function applyFill(f) {
+  if (!f || typeof f !== 'object') return;
+  const put = (id, v) => {
+    const el = document.getElementById(id);
+    if (!el || v == null || String(v).trim() === '') return;
+    el.value = String(v).trim();
+  };
+  put('nm', f.name);
+  put('ph', f.phone);
+  put('em', f.email);
+  put('ad', f.address);
+  put('sqft', f.sqft);
+  setChoice('system', f.system, SYSTEMS);
+  put('color', f.color);
+  if (f.prep != null && String(f.prep).trim()) setPrep(f.prep);
+  const cureText = String(f.cure || '').trim();
+  const timeline = String(f.timeline || '').trim();
+  if (cureText) setChoice('cure', cureText, CURES);
+  else if (timeline) setChoice('cure', timeline, CURES);
+  put('rate', f.rate);
+  const notes = [f.notes, f.extras, cureText && timeline ? timeline : ''].map((v) => (v == null ? '' : String(v).trim())).filter(Boolean).join('\n');
+  if (notes && $('#qt')) $('#qt').value = notes;
+  if (f.name || f.phone || f.email || f.address) {
+    const acc = document.getElementById('acc-qc');
+    if (acc) acc.classList.add('open');
+  }
+  cs();
+  livePrice();
+}
+function localColor(raw) {
+  const m = String(raw || '').match(/\b(?:flake color|color|in)\s+([A-Za-z][A-Za-z]+(?:\s+[A-Za-z]+)?)/i);
+  if (!m) return '';
+  const words = m[1].trim().split(/\s+/);
+  if (/^(the|a|an|our|this|that|my|your|full|two|one)$/i.test(words[0])) return '';
+  return words.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+function localSystem(low) {
+  const rules = [
+    [/pool\s*deck/, 'Pool deck coating'],
+    [/kitchen/, 'Commercial kitchen floor'],
+    [/warehouse|industrial/, 'Warehouse / industrial floor'],
+    [/patio|porch|lanai|breezeway/, 'Patio and porch coating'],
+    [/polyaspartic/, 'Polyaspartic system'],
+    [/polyurea/, 'Polyurea garage system'],
+    [/metallic/, 'Metallic epoxy'],
+    [/quartz/, 'Quartz broadcast'],
+    [/flake|vinyl\s*chip|chip\s*system|full[-\s]?broadcast/, 'Garage floor flake system'],
+    [/solid(?:\s+color)?\s+epoxy|\bepoxy\b/, 'Solid color epoxy'],
+    [/seal(?:er|ing)?/, 'Concrete sealing'],
+    [/grind|prep only/, 'Grind and prep only'],
+    [/crack|spall/, 'Crack and spall repair']
+  ];
+  for (const [re, name] of rules) if (re.test(low)) return name;
+  return '';
+}
+function localPrep(low) {
+  const rules = [
+    [/diamond\s*grind|\bgrind/, 'Diamond grinding'],
+    [/crack/, 'Crack repair'],
+    [/spall|\bpatch/, 'Spall / patch repair'],
+    [/moisture|vapor|\bmvt\b/, 'Moisture mitigation'],
+    [/\boil\b/, 'Oil stain treatment'],
+    [/joint/, 'Joint fill'],
+    [/shot\s*blast|coating removal|stripp/, 'Coating removal']
+  ];
+  const out = [];
+  for (const [re, name] of rules) if (re.test(low) && out.indexOf(name) < 0) out.push(name);
+  return out.join(', ');
+}
+function localCure(low) {
+  const rules = [
+    [/same[- ]day|back today|tonight/, 'Same-day return'],
+    [/24\s*hours?|back in 24|one day|1 day/, '24 hours'],
+    [/48\s*hours?|two days|2 days/, '48 hours'],
+    [/72\s*hours?|three days|3 days/, '72 hours'],
+    [/5\s*[-–to]{1,3}\s*7|a week|one week/, '5–7 days']
+  ];
+  for (const [re, name] of rules) if (re.test(low)) return name;
+  return '';
+}
+function localFillFields(text) {
+  const raw = String(text || '').trim();
+  const out = {};
+  if (!raw || typeof SCCQuote === 'undefined') return out;
+  const sq = SCCQuote.parseSqft(raw);
+  const rate = SCCQuote.parseRate(raw);
+  if (sq) out.sqft = String(sq);
+  if (rate != null) out.rate = String(rate);
+  const low = raw.toLowerCase();
+  const system = localSystem(low);
+  if (system) out.system = system;
+  const prep = localPrep(low);
+  if (prep) out.prep = prep;
+  const cure = localCure(low);
+  if (cure) out.cure = cure;
+  const color = localColor(raw);
+  if (color) out.color = color;
+  const items = SCCQuote.rewriteQuote(raw);
+  if (items.length > 1) out.notes = items.slice(1).map((it) => [it.title, it.detail].filter(Boolean).join(' - ')).join('\n');
+  return out;
+}
+async function fillQuote() {
+  const text = ($('#talk') && $('#talk').value || '').trim();
+  const note = $('#fillnote');
+  const btn = $('#fillbtn');
+  const show = (t) => { if (note) { note.hidden = false; note.textContent = t; } };
+  if (!text) { show('Say or type the job in the box above.'); return; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Filling…'; }
+  try {
+    const r = await api({ a: 'qfill', pin: ownerPin(), text });
+    if (!r.ready) {
+      show(r.message || 'AI fill not set up yet');
+      applyFill(localFillFields(text));
+      return;
+    }
+    applyFill(r.fields || {});
+    show('Filled in. Change anything that is off.');
+  } catch (e) {
+    show(e.message || 'Could not fill that in.');
+    applyFill(localFillFields(text));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Fill in the quote'; }
+  }
+}
 function newq(pre) {
   photos = [];
   ACC = {};
   cur = null;
   if (pre && typeof pre === 'object') ACC.qc = true;
-  A.innerHTML = `<div class="card"><h2>New quote</h2>
+  A.innerHTML = `<div class="card">
+<label style="margin-top:0">Talk it through</label>
+<textarea id="talk" rows="8" style="min-height:180px" placeholder="Pat at 1 Call Street, 480 sq ft garage, full flake in Dominion, grind and crack repair, 6.50 a sq ft, back in 24 hours"></textarea>
+<p class="muted">Tap the microphone on the keyboard. Dictation works in this box.</p>
+<button class="btn d" id="fillbtn" type="button" onclick="fillQuote()">Fill in the quote</button>
+<p id="fillnote" class="muted" hidden></p>
+<h2>New quote</h2>
 ${acc('qc', 'Customer details', 'Tap to enter name, address, email', `<label>Customer name</label><input id="nm" autocomplete="name" oninput="cs()"><label>Address</label><div style="position:relative"><input id="ad" autocomplete="off" autocapitalize="words" placeholder="Start typing the Tallahassee address" oninput="cs()"><div class="sug" id="adsug" hidden></div></div><label>Customer email</label><input id="em" type="email" inputmode="email" autocomplete="off" placeholder="Saved on the job" oninput="cs()"><label>Customer phone (optional)</label><input id="ph" type="tel" inputmode="tel" autocomplete="off" placeholder="For call and text from Customers" oninput="cs()">${TEST_MODE ? `<p class="muted">Test mode is on. This address is stored on the job. The estimate email goes only to ${esc(TEST_TO)}.</p>` : '<p class="muted">This email is where the estimate is sent.</p>'}`)}
 <label>Square footage</label><input id="sqft" inputmode="decimal" placeholder="480" oninput="livePrice()">
 <p id="ailabel" hidden style="font-weight:700;color:#9a3412;margin:8px 0 0">AI estimate, verify on site</p>
@@ -721,9 +880,7 @@ let IT = [];
 function prev() {
   const spoken = $('#qt').value.trim();
   const f = fieldVals();
-  if (!spoken && !f.system && !f.sqft) return toast('Add the floor details or say the work first');
   IT = SCCQuote.buildItems(f, spoken);
-  if (!IT.length) return toast('Add at least one line');
   drawPv();
 }
 function itSum() {
@@ -752,15 +909,12 @@ async function sendQ() {
     hardness: $('#hard') ? $('#hard').value : '', hardnessHow: $('#hardhow') ? $('#hardhow').value.trim() : '',
     items: IT.filter((i) => i.title && i.title.trim()), photos
   };
-  if (!d.name) return toast('Add the customer name');
   if (d.email && !SCCQuote.validEmail(d.email)) return toast('That email does not look right. Check it.');
-  if (!TEST_MODE && !SCCQuote.validEmail(d.email)) return toast('Add a valid customer email before sending.');
-  if (!d.items.length) return toast('Add at least one line');
   $('#sq').disabled = true;
   $('#sq').textContent = 'Sending…';
   try {
-    await api(d);
-    toast(sentMsg('Estimate'));
+    const r = await api(d);
+    toast(r.job && r.job.emailed === false ? 'Estimate saved' : sentMsg('Estimate'));
     await refresh();
     render();
   } catch (e) { toast(e.message); $('#sq').disabled = false; $('#sq').textContent = 'Send quote email + PDF'; }
@@ -1303,14 +1457,33 @@ function setScreen() {
 <div class="card"><h2>Pay over time</h2><label>Financing link</label><input id="sf" type="url" inputmode="url" autocomplete="off" autocapitalize="off" placeholder="https://..." value="${esc(S.finLink || '')}">
 <label>Show it on quotes and invoices of at least ($)</label><input id="sm" inputmode="decimal" value="${esc(S.finMin == null ? 1000 : S.finMin)}">
 <p class="muted" style="margin:6px 0 0">Adds a Pay over time button. Hidden when no link is set or the amount is below this number.</p></div>
+<div class="card"><h2>Customer email</h2>
+<p class="muted" style="margin:0 0 8px">This wording is the estimate email. A blank box keeps the original line.</p>
+<label>Subject</label><textarea id="qsub" rows="2">${esc(S.quoteSubject || SCCQuote.QUOTE_EMAIL_SUBJECT)}</textarea>
+<label>Message</label><textarea id="qbody" rows="6">${esc(S.quoteBody || SCCQuote.QUOTE_EMAIL_BODY)}</textarea>
+<label>Sign-off</label><textarea id="qsign" rows="3">${esc(S.quoteSign || SCCQuote.QUOTE_EMAIL_SIGN)}</textarea>
+<p class="muted">Line breaks stay. {name}, {estimate}, and {address} fill in for that customer.</p>
+<button class="btn gr" id="qreset" type="button" onclick="resetEmailCopy()">Reset to default</button></div>
 <button class="btn huge" id="ss" type="button" onclick="saveSet()">Save settings</button>`;
+}
+function resetEmailCopy() {
+  if ($('#qsub')) $('#qsub').value = SCCQuote.QUOTE_EMAIL_SUBJECT;
+  if ($('#qbody')) $('#qbody').value = SCCQuote.QUOTE_EMAIL_BODY;
+  if ($('#qsign')) $('#qsign').value = SCCQuote.QUOTE_EMAIL_SIGN;
+  saveSet();
 }
 async function saveSet() {
   const b = $('#ss');
   b.disabled = true;
   b.textContent = 'Saving…';
   try {
-    const r = await api({ a: 'settings', pin: ownerPin(), payLink: $('#sp').value.trim(), reviewLink: $('#sr').value.trim(), finLink: $('#sf').value.trim(), finMin: $('#sm').value });
+    const r = await api({
+      a: 'settings', pin: ownerPin(),
+      payLink: $('#sp').value.trim(), reviewLink: $('#sr').value.trim(), finLink: $('#sf').value.trim(), finMin: $('#sm').value,
+      quoteSubject: $('#qsub') ? $('#qsub').value.trim() : '',
+      quoteBody: $('#qbody') ? $('#qbody').value.trim() : '',
+      quoteSign: $('#qsign') ? $('#qsign').value.trim() : ''
+    });
     SET = r.settings || SET;
     toast('Settings saved');
     b.disabled = false;

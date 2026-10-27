@@ -217,3 +217,41 @@ test('hardness, notes, and AI measure notes never reach a customer-facing render
   assert.match(q.reviewEmailHtml(face(dirty)), /Leave a review/);
   assert.doesNotMatch(q.responseThanksHtml(face(dirty)), /ZXNOTE/);
 });
+
+test('blank quote fields are omitted and the saved email wording is escaped', () => {
+  const bare = {
+    id: 'SCC-2', est: '', name: '', address: '', email: '',
+    items: [], total: 0
+  };
+  const base = { co, colors, job: bare, testMode: false, testTo: TEST_TO, logoSrc: 'cid:logo', link: (k) => 'https://script.example/?ans=' + k };
+  const plain = q.quoteEmailHtml(base);
+  assert.doesNotMatch(plain, /Dear\s*,/);
+  assert.doesNotMatch(plain, /Prepared for/);
+  assert.match(plain, /Thank you for considering Southern Concrete Coatings for your project/);
+  assert.match(plain, /Sincerely,<br>Southern Concrete Coatings/);
+  const copy = q.quoteEmailCopy({ co, job: { name: 'Pat Homeowner', est: 'SCC-EST-2026-0009', address: '1 Call St' } });
+  assert.equal(copy.subject, 'Your concrete coating estimate from Southern Concrete Coatings - SCC-EST-2026-0009');
+  const custom = q.quoteEmailHtml(Object.assign({}, base, {
+    job: Object.assign({}, bare, {
+      name: 'Pat Homeowner', est: 'SCC-EST-2026-0009', address: '1 Call St',
+      hardness: 8, hardnessHow: 'ZXHARD', internalNotes: [{ text: 'ZXNOTE' }], aiNote: 'ZXAI'
+    }),
+    settings: {
+      quoteBody: 'Hello {name}.\nSee the <script>estimate</script> for {address}.',
+      quoteSubject: 'Estimate {estimate} for {name}',
+      quoteSign: 'Thanks,\nThe crew'
+    }
+  }));
+  assert.match(custom, /Hello Pat Homeowner\.<br>See the &lt;script&gt;estimate&lt;\/script&gt; for 1 Call St\./);
+  assert.match(custom, /Thanks,<br>The crew/);
+  assert.doesNotMatch(custom, /Thank you for considering/);
+  assert.doesNotMatch(custom, /<script>/);
+  assert.doesNotMatch(custom, /ZXHARD|ZXNOTE|ZXAI|Mohs/);
+  const filled = q.quoteEmailCopy({
+    co, job: { name: 'Pat', est: 'SCC-EST-2026-0009', address: '1 Call St', hardness: 8 },
+    settings: { quoteSubject: 'Estimate {estimate}', quoteBody: 'Hardness stays {hardness}.' }
+  });
+  assert.equal(filled.subject, 'Estimate SCC-EST-2026-0009');
+  assert.match(filled.body, /\{hardness\}/);
+  assert.doesNotMatch(filled.body, /\b8\b/);
+});
