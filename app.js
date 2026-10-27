@@ -457,11 +457,11 @@ function home() {
   A.innerHTML = `<button class="btn huge" type="button" onclick="newq()">+ New quote</button>
 <div class="row"><button class="btn n nav" type="button" onclick="go('cust')">👥 Customers</button><button class="btn n nav" type="button" onclick="go('books')">📒 Bookkeeping</button></div>
 <button class="btn huge" type="button" onclick="go('gal')">Gallery</button>
-<button class="btn n" type="button" onclick="go('fb')">Feedback</button>
 <input id="find" type="search" placeholder="Search name, address or estimate #" value="${esc(SQ)}" autocomplete="off" oninput="SQ=this.value;hl()" style="margin-top:12px;font-size:16px">
 <div class="tabs" style="margin-top:12px">${['est', 'jobs', 'done'].map((k) => `<button type="button" class="${tab === k && !SQ.trim() ? 'on' : ''}" onclick="tab='${k}';SQ='';home()">${SECT[k]}<span class="cnt">${G[k].length}</span></button>`).join('')}</div>
 <div id="hl"></div>
-<div class="row"><button class="btn gr" type="button" onclick="refresh().then(render)">↻ Refresh</button><button class="btn gr" type="button" onclick="go('set')">⚙️ Settings</button></div>`;
+<div class="row"><button class="btn gr" type="button" onclick="refresh().then(render)">↻ Refresh</button><button class="btn gr" type="button" onclick="go('set')">⚙️ Settings</button></div>
+<button class="btn n" type="button" onclick="go('fb')">Feedback</button>`;
   hl();
 }
 function homeBtn() { RC = null; view = ''; CK = ''; render(); window.scrollTo(0, 0); }
