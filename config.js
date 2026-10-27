@@ -4,7 +4,7 @@
    false = mail goes to the customer address stored on the job.
    Leave this true until you are ready for real customers, and change it in
    Code.gs at the same time. Both copies must match. */
-var TEST_MODE = true;
+var TEST_MODE = false;
 var TEST_TO = 'austin@techsourcedsolutions.com';
 
 /* Field PIN. This static app has no server login. The Owner PIN lives in ROLES
