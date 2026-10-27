@@ -267,7 +267,7 @@ function quoteEmailHtml(o){
     return '<a href="'+o.link(k)+'" style="display:block;margin:8px 0;padding:15px;background:'+c+';color:#fff;text-decoration:none;border-radius:10px;font-weight:bold;font-size:16px;text-align:center">'+t+'</a>';
   }
   var inner='<p style="font-size:16px">Dear '+escHtml(j.name)+',</p>'+
-    '<p style="line-height:1.6">Thank you for asking Southern Concrete Coatings to look at the concrete at your property. Below is the estimate for the coating system we discussed. A PDF copy is attached.</p>'+
+    '<p style="line-height:1.6">Thank you for considering Southern Concrete Coatings for your project. We appreciate the opportunity to earn your business and look forward to helping bring your vision to life. Below is the estimate for the coating system we discussed. A PDF copy is attached.</p>'+
     metaBlock(j,'Estimate #',j.est,o.colors)+specRows(j)+itemsTable(j,o.colors)+
     (o.photosHtml?'<p style="margin:18px 0 6px"><b style="color:'+n+'">Site photos</b></p>'+o.photosHtml:'')+
     '<div style="background:#f4f5f8;border-radius:10px;padding:16px;margin:20px 0"><p style="margin:0 0 4px;font-size:16px"><b style="color:'+n+'">Ready to coat the floor? Tap one:</b></p>'+
