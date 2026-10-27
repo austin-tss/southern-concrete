@@ -430,7 +430,7 @@ function gHits() {
 }
 function gqSet(v) { GQ = v; glist(); }
 function galScreen() {
-  A.innerHTML = `<div class="card" style="margin-bottom:10px"><h2 style="margin-bottom:8px">Gallery</h2>
+  A.innerHTML = `<button class="btn gr" type="button" onclick="homeBtn()">← Back</button><div class="card" style="margin-bottom:10px"><h2 style="margin-bottom:8px">Gallery</h2>
 <input id="gq" type="search" enterkeyhint="search" placeholder="Try gray flake garage floor or metallic blue" value="${esc(GQ)}" autocomplete="off" oninput="gqSet(this.value)" style="font-size:20px;padding:18px">
 <p class="muted" style="margin:10px 0 0">Photos: <a href="${esc(SCCGallery.simiron)}" target="_blank" rel="noopener">Simiron</a></p></div>
 <button class="btn huge" id="gshow" type="button" onclick="gshow()">Show photos</button>
