@@ -217,6 +217,12 @@ function itemsTable(j,colors){
     '<tr><td></td><td style="padding:12px 8px;text-align:right;font-weight:bold">Total</td>'+
     '<td style="padding:12px 8px;text-align:right;font-size:20px;font-weight:bold;color:'+dg+'">'+money(tot)+'</td></tr></table>';
 }
+function additionalNotesHtml(j, colors){
+  var t=String((j&&j.additionalNotes)||'').trim();
+  if(!t)return '';
+  var n=(colors&&colors.n)||'#3a415c';
+  return '<p style="margin:18px 0 6px"><b style="color:'+n+'">Additional notes</b></p><p style="line-height:1.6;margin:0">'+emailText(t)+'</p>';
+}
 function testBanner(testMode,testTo,customer){
   if(!testMode)return '';
   return '<p style="background:#fff3cd;border:1px solid #e0b100;padding:8px 10px;border-radius:8px;font-size:13px;margin:0 0 14px"><b>TEST MODE</b> &mdash; this email would normally go to the customer: '+
@@ -308,7 +314,7 @@ function quoteEmailHtml(o){
   var copy=quoteEmailCopy(o);
   var inner=greetLine('Dear',j.name)+
     '<p style="line-height:1.6">'+emailText(copy.body)+'</p>'+
-    metaBlock(j,'Estimate #',j.est,o.colors)+specRows(j)+itemsTable(j,o.colors)+
+    metaBlock(j,'Estimate #',j.est,o.colors)+specRows(j)+itemsTable(j,o.colors)+additionalNotesHtml(j,o.colors)+
     (o.photosHtml?'<p style="margin:18px 0 6px"><b style="color:'+n+'">Site photos</b></p>'+o.photosHtml:'')+
     '<div style="background:#f4f5f8;border-radius:10px;padding:16px;margin:20px 0"><p style="margin:0 0 4px;font-size:16px"><b style="color:'+n+'">Ready to coat the floor? Tap one:</b></p>'+
     '<p style="margin:0 0 6px;color:#5c6370;font-size:13px">Next we will ask when the crew can have the floor.</p>'+
@@ -324,7 +330,7 @@ function quoteEmailHtml(o){
 function pdfHtml(o){
   o=customerFace(o);
   var j=o.job;
-  var inner=metaBlock(j,'Estimate #',j.est,o.colors)+specRows(j)+itemsTable(j,o.colors)+
+  var inner=metaBlock(j,'Estimate #',j.est,o.colors)+specRows(j)+itemsTable(j,o.colors)+additionalNotesHtml(j,o.colors)+
     '<h3 style="color:'+o.colors.n+';margin:22px 0 6px;font-size:15px">Terms</h3><ul style="font-size:13px;color:#33383d;line-height:1.6;padding-left:18px">'+
     TERMS.map(function(t){return '<li>'+escHtml(t)+'</li>';}).join('')+'</ul>'+
     '<p style="font-size:13px">To approve, use the buttons in the estimate email or call '+escHtml(o.co.phone)+'.</p>'+
@@ -357,6 +363,7 @@ function invoiceEmailHtml(o){
     '<p>Thank you for your business. Here is the invoice for the completed coating.</p>'+
     metaBlock(j,'Invoice #',inv,o.colors)+specRows(j)+itemsTable(j,o.colors)+
     '<p style="font-size:18px;text-align:right"><b>Amount due: <span style="color:'+o.colors.dg+'">'+escHtml(v.amount)+'</span></b></p>'+
+    additionalNotesHtml(j,o.colors)+
     (v.note?'<p>'+escHtml(v.note)+'</p>':'')+
     payButtons(o)+
     '<p>Questions? Call '+escHtml(o.co.phone)+'.</p>';
@@ -370,7 +377,9 @@ function responseFormHtml(o){
   }).join('');
   var ask=(ans==='B'||ans==='O')?'<p><b>'+(ans==='B'?'What would you like changed?':'Your question or message:')+'</b></p><textarea name="text" rows="4" style="width:100%;box-sizing:border-box;font-size:17px;padding:14px;border:2px solid #cfd3de;border-radius:10px"></textarea>':'';
   var where=String(j.address||'').trim();
+  var notes=additionalNotesHtml(j,o.colors);
   return '<h2 style="color:'+o.colors.n+'">'+escHtml(labels[ans]||ans)+'</h2><p>Estimate '+escHtml(j.est||j.id)+(where?' &middot; '+escHtml(where):'')+'</p>'+
+    (notes?itemsTable(j,o.colors)+notes:'')+
     '<form method="get" action="'+escHtml(action)+'">'+
     '<input type="hidden" name="a" value="respond"><input type="hidden" name="id" value="'+escHtml(j.id)+'">'+
     '<input type="hidden" name="ans" value="'+escHtml(ans)+'"><input type="hidden" name="done" value="1">'+ask+

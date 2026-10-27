@@ -18,6 +18,7 @@ const COLORS = { n: '#3a415c', g: '#424866', dg: '#2a3148' };
 const jobs = [];
 const blocks = [];
 const inbox = [];
+const feedback = [];
 const expenses = [];
 const receipts = new Map();
 const gallery = [];
@@ -103,6 +104,14 @@ function handle(d) {
       ok: true, ready: true, sqft: 432, lengthFt: 24, widthFt: 18, confidence: 'medium',
       note: 'ZXAI double door about 16 ft, two bays'
     };
+  }
+  if (d.a === 'feedback') {
+    if (!pinOk(d)) return { ok: false, err: 'Wrong PIN' };
+    const text = String(d.text || '').trim();
+    if (!text) return { ok: false, err: 'Write a note first' };
+    feedback.push({ at: new Date().toISOString(), role: String(d.role || '').slice(0, 40), text: text.slice(0, 4000) });
+    if (feedback.length > 500) feedback.splice(0, feedback.length - 500);
+    return { ok: true };
   }
   if (d.a === 'qfill') {
     if (!pinOk(d)) return { ok: false, err: 'Wrong PIN' };
@@ -194,6 +203,7 @@ function handle(d) {
       quote: d.quote || '', sqft: numField(d.sqft), system: d.system || '', color: d.color || '',
       prep: d.prep || '', cure: d.cure || '', rate: numField(d.rate),
       hardness: hardnessVal(d.hardness), hardnessHow: String(d.hardnessHow || '').trim().slice(0, 300), internalNotes: [],
+      additionalNotes: String(d.additionalNotes || '').trim().slice(0, 4000),
       items, total: q.totalOf(items), status: 'sent', created: new Date().toISOString(),
       photos: storePhotos(d.photos, 'quote'), crew: [],
       folder: 'https://drive.google.com/drive/folders/scc-project-' + seq,
@@ -239,6 +249,49 @@ function handle(d) {
     if (hv === null) return { ok: false, err: 'Hardness is a whole number from 1 to 10.' };
     j.hardness = hv;
     j.hardnessHow = String(d.hardnessHow || '').trim().slice(0, 300);
+  } else if (d.a === 'qedit') {
+    if (d.email && !q.validEmail(d.email)) return { ok: false, err: 'That customer email does not look valid.' };
+    if (hardnessVal(d.hardness) === null) return { ok: false, err: 'Hardness is a whole number from 1 to 10.' };
+    const keptId = j.id, keptEst = j.est, keptStatus = j.status, keptNotes = j.internalNotes;
+    j.name = String(d.name || '').trim().slice(0, 200);
+    j.address = String(d.address || '').trim().slice(0, 300);
+    j.email = String(d.email || '').trim();
+    j.phone = String(d.phone || '').trim().slice(0, 40);
+    j.quote = String(d.quote || '').slice(0, 8000);
+    j.sqft = numField(d.sqft);
+    j.system = String(d.system || '').trim().slice(0, 80);
+    j.color = String(d.color || '').trim().slice(0, 80);
+    j.prep = String(d.prep || '').trim().slice(0, 240);
+    j.cure = String(d.cure || '').trim().slice(0, 80);
+    j.rate = numField(d.rate);
+    j.hardness = hardnessVal(d.hardness);
+    j.hardnessHow = String(d.hardnessHow || '').trim().slice(0, 300);
+    j.additionalNotes = String(d.additionalNotes || '').trim().slice(0, 4000);
+    j.items = (Array.isArray(d.items) ? d.items : []).map((it) => {
+      const title = String(it && it.title || '').trim().slice(0, 200);
+      if (!title) return null;
+      let price = null;
+      if (it.price != null && String(it.price).trim() !== '') {
+        const n = Number(String(it.price).replace(/[$,]/g, ''));
+        if (!Number.isNaN(n)) price = Math.round(n * 100) / 100;
+      }
+      return { title, detail: String(it.detail || '').trim().slice(0, 2000), price };
+    }).filter(Boolean).slice(0, 40);
+    j.total = q.totalOf(j.items);
+    j.id = keptId;
+    j.est = keptEst;
+    j.status = keptStatus;
+    j.internalNotes = keptNotes;
+    if (d.send) {
+      const html = q.quoteEmailHtml({
+        co: CO, colors: COLORS, job: Object.assign({ date: 'October 27, 2026' }, j),
+        testMode: TEST_MODE, testTo: TEST_TO, logoSrc: 'cid:logo', settings,
+        link: (k) => '/exec?a=respond&id=' + encodeURIComponent(j.id) + '&ans=' + k
+      });
+      quoteOut(j, html);
+    }
+  } else if (d.a === 'addl') {
+    j.additionalNotes = String(d.additionalNotes != null ? d.additionalNotes : '').trim().slice(0, 4000);
   } else if (d.a === 'inote') {
     const noteText = String(d.text || '').trim();
     if (!noteText) return { ok: false, err: 'Write a note first' };
@@ -302,6 +355,14 @@ function start(port) {
           co: CO, colors: COLORS, job, ans: url.searchParams.get('ans'), action: '/exec',
           labels: { A: 'Approved', B: 'Approved with changes', C: 'Declined', O: 'Question / other' },
           slots: ['Weekdays 8-12', 'Weekdays 12-5', 'Weekends', 'Anytime']
+        }));
+        return;
+      }
+      if (req.method === 'GET' && url.searchParams.get('a') === 'feedback') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          ok: true,
+          feedback: feedback.map((row) => ({ at: String(row.at || ''), role: String(row.role || ''), text: String(row.text || '') }))
         }));
         return;
       }

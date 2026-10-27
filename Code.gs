@@ -226,6 +226,12 @@ function itemsTable(j,colors){
     '<tr><td></td><td style="padding:12px 8px;text-align:right;font-weight:bold">Total</td>'+
     '<td style="padding:12px 8px;text-align:right;font-size:20px;font-weight:bold;color:'+dg+'">'+money(tot)+'</td></tr></table>';
 }
+function additionalNotesHtml(j, colors){
+  var t=String((j&&j.additionalNotes)||'').trim();
+  if(!t)return '';
+  var n=(colors&&colors.n)||'#3a415c';
+  return '<p style="margin:18px 0 6px"><b style="color:'+n+'">Additional notes</b></p><p style="line-height:1.6;margin:0">'+emailText(t)+'</p>';
+}
 function testBanner(testMode,testTo,customer){
   if(!testMode)return '';
   return '<p style="background:#fff3cd;border:1px solid #e0b100;padding:8px 10px;border-radius:8px;font-size:13px;margin:0 0 14px"><b>TEST MODE</b> &mdash; this email would normally go to the customer: '+
@@ -317,7 +323,7 @@ function quoteEmailHtml(o){
   var copy=quoteEmailCopy(o);
   var inner=greetLine('Dear',j.name)+
     '<p style="line-height:1.6">'+emailText(copy.body)+'</p>'+
-    metaBlock(j,'Estimate #',j.est,o.colors)+specRows(j)+itemsTable(j,o.colors)+
+    metaBlock(j,'Estimate #',j.est,o.colors)+specRows(j)+itemsTable(j,o.colors)+additionalNotesHtml(j,o.colors)+
     (o.photosHtml?'<p style="margin:18px 0 6px"><b style="color:'+n+'">Site photos</b></p>'+o.photosHtml:'')+
     '<div style="background:#f4f5f8;border-radius:10px;padding:16px;margin:20px 0"><p style="margin:0 0 4px;font-size:16px"><b style="color:'+n+'">Ready to coat the floor? Tap one:</b></p>'+
     '<p style="margin:0 0 6px;color:#5c6370;font-size:13px">Next we will ask when the crew can have the floor.</p>'+
@@ -333,7 +339,7 @@ function quoteEmailHtml(o){
 function pdfHtml(o){
   o=customerFace(o);
   var j=o.job;
-  var inner=metaBlock(j,'Estimate #',j.est,o.colors)+specRows(j)+itemsTable(j,o.colors)+
+  var inner=metaBlock(j,'Estimate #',j.est,o.colors)+specRows(j)+itemsTable(j,o.colors)+additionalNotesHtml(j,o.colors)+
     '<h3 style="color:'+o.colors.n+';margin:22px 0 6px;font-size:15px">Terms</h3><ul style="font-size:13px;color:#33383d;line-height:1.6;padding-left:18px">'+
     TERMS.map(function(t){return '<li>'+escHtml(t)+'</li>';}).join('')+'</ul>'+
     '<p style="font-size:13px">To approve, use the buttons in the estimate email or call '+escHtml(o.co.phone)+'.</p>'+
@@ -366,6 +372,7 @@ function invoiceEmailHtml(o){
     '<p>Thank you for your business. Here is the invoice for the completed coating.</p>'+
     metaBlock(j,'Invoice #',inv,o.colors)+specRows(j)+itemsTable(j,o.colors)+
     '<p style="font-size:18px;text-align:right"><b>Amount due: <span style="color:'+o.colors.dg+'">'+escHtml(v.amount)+'</span></b></p>'+
+    additionalNotesHtml(j,o.colors)+
     (v.note?'<p>'+escHtml(v.note)+'</p>':'')+
     payButtons(o)+
     '<p>Questions? Call '+escHtml(o.co.phone)+'.</p>';
@@ -379,7 +386,9 @@ function responseFormHtml(o){
   }).join('');
   var ask=(ans==='B'||ans==='O')?'<p><b>'+(ans==='B'?'What would you like changed?':'Your question or message:')+'</b></p><textarea name="text" rows="4" style="width:100%;box-sizing:border-box;font-size:17px;padding:14px;border:2px solid #cfd3de;border-radius:10px"></textarea>':'';
   var where=String(j.address||'').trim();
+  var notes=additionalNotesHtml(j,o.colors);
   return '<h2 style="color:'+o.colors.n+'">'+escHtml(labels[ans]||ans)+'</h2><p>Estimate '+escHtml(j.est||j.id)+(where?' &middot; '+escHtml(where):'')+'</p>'+
+    (notes?itemsTable(j,o.colors)+notes:'')+
     '<form method="get" action="'+escHtml(action)+'">'+
     '<input type="hidden" name="a" value="respond"><input type="hidden" name="id" value="'+escHtml(j.id)+'">'+
     '<input type="hidden" name="ans" value="'+escHtml(ans)+'"><input type="hidden" name="done" value="1">'+ask+
@@ -654,7 +663,40 @@ function scriptProp_(name) {
   } catch (eProp) { return ''; }
 }
 function geminiModel_() {
-  return scriptProp_('GEMINI_MODEL') || 'gemini-2.5-flash';
+  return scriptProp_('GEMINI_MODEL') || 'gemini-3.8-flash';
+}
+function geminiFetch_(key, model, parts) {
+  var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent';
+  var res = UrlFetchApp.fetch(url, {
+    method: 'post',
+    contentType: 'application/json',
+    muteHttpExceptions: true,
+    headers: { 'x-goog-api-key': key },
+    payload: JSON.stringify({
+      contents: [{ role: 'user', parts: parts }],
+      generationConfig: { temperature: 0.2, responseMimeType: 'application/json' }
+    })
+  });
+  return { code: res.getResponseCode(), body: res.getContentText() || '' };
+}
+function geminiWalk_(model, fetchModel, sleep) {
+  var waits = [0, 1000, 3000];
+  var last = { code: 0, body: '' };
+  var i;
+  for (i = 0; i < waits.length; i++) {
+    if (waits[i] && sleep) sleep(waits[i]);
+    try { last = fetchModel(model) || { code: 0, body: '' }; }
+    catch (eTry) { last = { code: 0, body: '' }; }
+    if (last.code >= 200 && last.code < 300) return last;
+    if (!(last.code === 429 || last.code === 500 || last.code === 503 || last.code === 0)) break;
+  }
+  if (model === 'gemini-flash-latest') return last;
+  try { last = fetchModel('gemini-flash-latest') || last; }
+  catch (eAlt) {}
+  return last;
+}
+function geminiGenerate_(key, parts) {
+  return geminiWalk_(geminiModel_(), function (model) { return geminiFetch_(key, model, parts); }, function (ms) { Utilities.sleep(ms); });
 }
 function normalizeMeasure_(raw) {
   var o = raw;
@@ -707,27 +749,10 @@ function measureFloor_(images, known) {
   }
   if (!parts.length) return { ok: true, ready: false, message: 'Add a photo of the floor first' };
   parts.unshift({ text: prompt });
-  var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(geminiModel_()) + ':generateContent';
-  var res, code, body;
-  try {
-    res = UrlFetchApp.fetch(url, {
-      method: 'post',
-      contentType: 'application/json',
-      muteHttpExceptions: true,
-      headers: { 'x-goog-api-key': key },
-      payload: JSON.stringify({
-        contents: [{ role: 'user', parts: parts }],
-        generationConfig: { temperature: 0.2, responseMimeType: 'application/json' }
-      })
-    });
-    code = res.getResponseCode();
-    body = res.getContentText() || '';
-  } catch (eFetch) {
-    return measureFail_();
-  }
-  if (code < 200 || code >= 300) return measureFail_();
+  var gotFetch = geminiGenerate_(key, parts);
+  if (!gotFetch || gotFetch.code < 200 || gotFetch.code >= 300) return measureFail_();
   var parsed;
-  try { parsed = JSON.parse(body); } catch (eParse) { return measureFail_(); }
+  try { parsed = JSON.parse(gotFetch.body); } catch (eParse) { return measureFail_(); }
   var got = normalizeMeasure_(geminiText_(parsed));
   if (!got) return measureFail_();
   return { ok: true, ready: true, sqft: got.sqft, lengthFt: got.lengthFt, widthFt: got.widthFt, confidence: got.confidence, note: got.note };
@@ -794,31 +819,14 @@ function quoteFill_(text) {
   var key = scriptProp_('GEMINI_API_KEY');
   if (!key) return { ok: true, ready: false, message: 'AI fill not set up yet' };
   spoken = spoken.slice(0, 8000);
-  var prompt = 'You fill a concrete coating estimate from what the contractor says. Return JSON with only the keys you can tell. Allowed keys: name, phone, email, address, sqft, system, color, prep, cure, rate, extras, timeline, notes. sqft and rate are numbers. prep is a comma-separated list such as diamond grinding and crack repair. extras is add-on work with its price. notes is something the customer can see, such as access or a request. Omit any key you do not know. Do not invent a price, phone, or email. Never return hardness, a Mohs number, or private notes, and do not place those in notes or extras.';
+  var prompt = 'You fill a concrete coating estimate from what the contractor says. Return JSON with only the keys you can tell. Allowed keys: name, phone, email, address, sqft, system, color, prep, cure, rate, extras, timeline, notes. sqft and rate are numbers. prep is a comma-separated list such as diamond grinding and crack repair. extras is add-on work with its price. notes is optional customer-facing additional text that is not a line item and has no price, such as a gate code, a pet, or when to call. Omit notes when the customer does not need any extra text. Omit any key you do not know. Do not invent a price, phone, or email. Never return hardness, a Mohs number, or private notes, and do not place those in notes or extras.';
   prompt += ' Coating systems you can use: Garage floor flake system, Metallic epoxy, Solid color epoxy, Polyaspartic system, Polyurea garage system, Quartz broadcast, Pool deck coating, Patio and porch coating, Commercial kitchen floor, Warehouse / industrial floor, Concrete sealing, Grind and prep only, Crack and spall repair.';
   prompt += ' Cure choices: Same-day return, 24 hours, 48 hours, 72 hours, 5-7 days.';
   prompt += '\n\nSpoken notes:\n' + spoken;
-  var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(geminiModel_()) + ':generateContent';
-  var res, code, body;
-  try {
-    res = UrlFetchApp.fetch(url, {
-      method: 'post',
-      contentType: 'application/json',
-      muteHttpExceptions: true,
-      headers: { 'x-goog-api-key': key },
-      payload: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.2, responseMimeType: 'application/json' }
-      })
-    });
-    code = res.getResponseCode();
-    body = res.getContentText() || '';
-  } catch (eFetch) {
-    return { ok: true, ready: false, message: 'Could not fill that in. The notes on this phone were used instead.' };
-  }
-  if (code < 200 || code >= 300) return { ok: true, ready: false, message: 'Could not fill that in. The notes on this phone were used instead.' };
+  var gotFetch = geminiGenerate_(key, [{ text: prompt }]);
+  if (!gotFetch || gotFetch.code < 200 || gotFetch.code >= 300) return { ok: true, ready: false, message: 'Could not fill that in. The notes on this phone were used instead.' };
   var parsed;
-  try { parsed = JSON.parse(body); } catch (eParse) {
+  try { parsed = JSON.parse(gotFetch.body); } catch (eParse) {
     return { ok: true, ready: false, message: 'Could not fill that in. The notes on this phone were used instead.' };
   }
   var got = normalizeFill_(geminiText_(parsed));
@@ -847,6 +855,13 @@ function sendReview_(j) {
 function doGet(e) {
   var p = (e && e.parameter) || {};
   if (p.a === 'logins') return out_({ ok: true, logins: load_('logins.json') });
+  if (p.a === 'feedback') {
+    var fbGet = load_('feedback.json');
+    if (!Array.isArray(fbGet)) fbGet = [];
+    return out_({ ok: true, feedback: fbGet.map(function (row) {
+      return { at: String(row && row.at || ''), role: String(row && row.role || ''), text: String(row && row.text || '') };
+    }) });
+  }
   if (p.a === 'img' && p.id) {
     var b = DriveApp.getFileById(p.id).getBlob();
     return out_({ ok: true, data: 'data:' + b.getContentType() + ';base64,' + Utilities.base64Encode(b.getBytes()) });
@@ -876,6 +891,22 @@ function numField_(v) {
   if (v == null || v === '') return '';
   var n = Number(String(v).replace(/[$,]/g, ''));
   return isNaN(n) ? '' : n;
+}
+function cleanItems_(list) {
+  var out = [], arr = Array.isArray(list) ? list : [], i;
+  for (i = 0; i < arr.length && out.length < 40; i++) {
+    var it = arr[i] || {};
+    var title = String(it.title || '').trim().slice(0, 200);
+    if (!title) continue;
+    var detail = String(it.detail || '').replace(/\u0000/g, '').trim().slice(0, 2000);
+    var price = null;
+    if (it.price != null && String(it.price).trim() !== '') {
+      var n = Number(String(it.price).replace(/[$,]/g, ''));
+      if (!isNaN(n)) price = Math.round(n * 100) / 100;
+    }
+    out.push({ title: title, detail: detail, price: price });
+  }
+  return out;
 }
 function doPost(e) {
   var d = JSON.parse(e.postData.contents);
@@ -933,6 +964,17 @@ function doPost(e) {
     if (d.a === 'qfill') {
       if (!pinOk_(d)) return out_({ ok: false, err: 'Wrong PIN' });
       return out_(quoteFill_(d.text));
+    }
+    if (d.a === 'feedback') {
+      if (!pinOk_(d)) return out_({ ok: false, err: 'Wrong PIN' });
+      var fbText = String(d.text || '').trim();
+      if (!fbText) return out_({ ok: false, err: 'Write a note first' });
+      var fbList = load_('feedback.json');
+      if (!Array.isArray(fbList)) fbList = [];
+      fbList.push({ at: new Date().toISOString(), role: String(d.role || '').slice(0, 40), text: fbText.slice(0, 4000) });
+      if (fbList.length > 500) fbList = fbList.slice(-500);
+      save_(fbList, 'feedback.json');
+      return out_({ ok: true });
     }
     if (d.a === 'settings' || d.a === 'explist' || d.a === 'expadd' || d.a === 'expdel' || d.a === 'rcscan' || d.a === 'rcrescan' || d.a === 'rcdrop') {
       if (!pinOk_(d)) return out_({ ok: false, err: 'Wrong PIN' });
@@ -1032,6 +1074,7 @@ function doPost(e) {
         hardness: hardnessVal_(d.hardness),
         hardnessHow: String(d.hardnessHow || '').trim().slice(0, 300),
         internalNotes: [],
+        additionalNotes: String(d.additionalNotes || '').trim().slice(0, 4000),
         items: items,
         total: totalOf(items),
         status: 'sent',
@@ -1069,6 +1112,33 @@ function doPost(e) {
         if (hv === null) return out_({ ok: false, err: 'Hardness is a whole number from 1 to 10.' });
         j.hardness = hv;
         j.hardnessHow = String(d.hardnessHow || '').trim().slice(0, 300);
+      } else if (d.a === 'qedit') {
+        if (d.email && !validEmail(d.email)) return out_({ ok: false, err: 'That customer email does not look valid.' });
+        if (hardnessVal_(d.hardness) === null) return out_({ ok: false, err: 'Hardness is a whole number from 1 to 10.' });
+        j.name = String(d.name || '').trim().slice(0, 200);
+        j.address = String(d.address || '').trim().slice(0, 300);
+        j.email = String(d.email || '').trim();
+        j.phone = String(d.phone || '').trim().slice(0, 40);
+        j.quote = String(d.quote || '').slice(0, 8000);
+        j.sqft = numField_(d.sqft);
+        j.system = String(d.system || '').trim().slice(0, 80);
+        j.color = String(d.color || '').trim().slice(0, 80);
+        j.prep = String(d.prep || '').trim().slice(0, 240);
+        j.cure = String(d.cure || '').trim().slice(0, 80);
+        j.rate = numField_(d.rate);
+        j.hardness = hardnessVal_(d.hardness);
+        j.hardnessHow = String(d.hardnessHow || '').trim().slice(0, 300);
+        j.additionalNotes = String(d.additionalNotes || '').trim().slice(0, 4000);
+        j.items = cleanItems_(d.items);
+        j.total = totalOf(j.items);
+        j.pdfId = '';
+        j.updated = new Date().toISOString();
+        try { makePdf_(j); } catch (ePdf) { j.pdf = ''; }
+        if (d.send) send = sendQuote_;
+      } else if (d.a === 'addl') {
+        j.additionalNotes = String(d.additionalNotes != null ? d.additionalNotes : '').trim().slice(0, 4000);
+        j.pdfId = '';
+        try { makePdf_(j); } catch (ePdf) { j.pdf = ''; }
       } else if (d.a === 'inote') {
         var noteText = String(d.text || '').trim();
         if (!noteText) return out_({ ok: false, err: 'Write a note first' });

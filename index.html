@@ -66,6 +66,11 @@ a.btn{text-decoration:none;text-align:center;color:#fff}
 .srow.open .srowb{display:block}
 .srowb label:first-of-type{margin-top:2px}
 .mic{background:var(--dg)}.mic.on{background:#9a3412}
+.talkbox{position:relative}
+.talkbox textarea{padding-bottom:58px}
+.talkmic{position:absolute;right:8px;bottom:8px;width:48px;height:48px;border:0;border-radius:24px;background:var(--n);color:#fff;font-size:22px;line-height:1;cursor:pointer;z-index:2}
+.talkmic.on{background:#b42318;animation:talkpulse 1s ease-in-out infinite}
+@keyframes talkpulse{50%{transform:scale(1.06);box-shadow:0 0 0 8px rgba(180,35,24,.28)}}
 .muted{color:#5c6370;font-size:14px}
 .spec p{margin:8px 0;font-size:18px}
 .checks{display:flex;flex-direction:column;gap:8px}

@@ -5,7 +5,7 @@ if (API) localStorage.sccApi = API;
 let blocks = [], role = sessionStorage.sccRole || '', jobs = [], root = '', cur = null, pin = '', photos = [];
 let serverTest = null, view = '', SET = {}, EXP = [], EXPL = false, EXPLOAD = false, PAYING = '', PAYM = 'check', CK = '', CQ = '', CL = [], SQ = '', tab = 'est';
 let RC = null, RCT = 0, RQ = [];
-let jtab = 'job', jtabFor = null;
+let jtab = 'job', jtabFor = null, editId = '';
 let GALS = [], GQ = '', GVIEW = [], GI = 0, GPIC = '', GX = 0;
 const $ = (s) => document.querySelector(s);
 const A = $('#app');
@@ -72,6 +72,50 @@ async function pick(inp, cb) {
   for (const f of inp.files) photos.push(await shrink(f));
   inp.value = '';
   cb();
+}
+function bindSpeech(btnId, fieldId, hintId) {
+  const b = document.getElementById(btnId);
+  const q = document.getElementById(fieldId);
+  if (!b || !q) return;
+  const showHint = (t) => {
+    const hint = hintId && document.getElementById(hintId);
+    if (hint) { hint.hidden = false; hint.textContent = t; }
+    else toast(t);
+  };
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    b.onclick = () => { q.focus(); showHint('Use the microphone on the keyboard to dictate.'); };
+    return;
+  }
+  let rec = null;
+  let base = '';
+  b.onclick = () => {
+    if (rec) { try { rec.stop(); } catch (e) { rec = null; b.classList.remove('on'); } return; }
+    rec = new SR();
+    rec.lang = 'en-US';
+    rec.continuous = true;
+    rec.interimResults = true;
+    base = q.value || '';
+    rec.onresult = (e) => {
+      let spoken = '';
+      for (let i = 0; i < e.results.length; i++) spoken += e.results[i][0].transcript;
+      spoken = spoken.replace(/\s+/g, ' ').trim();
+      const prior = base.replace(/\s+$/, '');
+      q.value = prior ? (spoken ? prior + ' ' + spoken : prior) : spoken;
+    };
+    const stop = () => { rec = null; b.classList.remove('on'); b.setAttribute('aria-pressed', 'false'); };
+    rec.onend = stop;
+    rec.onerror = () => { stop(); q.focus(); showHint('Use the microphone on the keyboard to dictate.'); };
+    try {
+      rec.start();
+      b.classList.add('on');
+      b.setAttribute('aria-pressed', 'true');
+    } catch (e) {
+      stop();
+      q.focus();
+      showHint('Use the microphone on the keyboard to dictate.');
+    }
+  };
 }
 function mic(btnId, fieldId) {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -172,6 +216,7 @@ function paint() {
   if (view === 'books') return bookScreen();
   if (view === 'set') return setScreen();
   if (view === 'gal') return galScreen();
+  if (view === 'fb') return feedbackScreen();
   home();
 }
 function key(k) {
@@ -216,8 +261,10 @@ function specHtml(j) {
   return '<div class="spec">' + rows.map((r) => `<p><b>${esc(r[0])}</b><br>${esc(r[1])}</p>`).join('') + '</div>';
 }
 function items(j) {
-  if (!j.items || !j.items.length) return `<p style="white-space:pre-wrap">${esc(j.quote || '')}</p>`;
-  return j.items.map((i) => `<p style="margin:6px 0;font-size:17px"><b>${esc(i.title)}</b>${i.price != null && i.price !== '' ? ' — ' + SCCQuote.money(Number(i.price)) : ''}<br><span class="muted">${esc(i.detail || '')}</span></p>`).join('') + `<p style="font-size:19px"><b>Total: ${SCCQuote.money(j.total)}</b></p>`;
+  const lines = (!j.items || !j.items.length)
+    ? `<p style="white-space:pre-wrap">${esc(j.quote || '')}</p>`
+    : j.items.map((i) => `<p style="margin:6px 0;font-size:17px"><b>${esc(i.title)}</b>${i.price != null && i.price !== '' ? ' — ' + SCCQuote.money(Number(i.price)) : ''}<br><span class="muted">${esc(i.detail || '')}</span></p>`).join('') + `<p style="font-size:19px"><b>Total: ${SCCQuote.money(j.total)}</b></p>`;
+  return lines + `<button class="btn n" id="editq" type="button" onclick="editQuote('${j.id}')">Edit quote</button>`;
 }
 
 const DAYN = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
@@ -410,6 +457,7 @@ function home() {
   A.innerHTML = `<button class="btn huge" type="button" onclick="newq()">+ New quote</button>
 <div class="row"><button class="btn n nav" type="button" onclick="go('cust')">👥 Customers</button><button class="btn n nav" type="button" onclick="go('books')">📒 Bookkeeping</button></div>
 <button class="btn huge" type="button" onclick="go('gal')">Gallery</button>
+<button class="btn n" type="button" onclick="go('fb')">Feedback</button>
 <input id="find" type="search" placeholder="Search name, address or estimate #" value="${esc(SQ)}" autocomplete="off" oninput="SQ=this.value;hl()" style="margin-top:12px;font-size:16px">
 <div class="tabs" style="margin-top:12px">${['est', 'jobs', 'done'].map((k) => `<button type="button" class="${tab === k && !SQ.trim() ? 'on' : ''}" onclick="tab='${k}';SQ='';home()">${SECT[k]}<span class="cnt">${G[k].length}</span></button>`).join('')}</div>
 <div id="hl"></div>
@@ -417,10 +465,37 @@ function home() {
   hl();
 }
 function homeBtn() { RC = null; view = ''; CK = ''; render(); window.scrollTo(0, 0); }
+function feedbackScreen() {
+  A.innerHTML = `<button class="btn gr" type="button" style="margin:0 0 12px" onclick="homeBtn()">← Home</button>
+<div class="card"><h2>Feedback</h2>
+<p class="muted">Tell us what to change.</p>
+<div class="talkbox"><textarea id="fbtext" rows="6" placeholder="What should we change?"></textarea><button class="talkmic" id="fbmic" type="button" aria-label="Microphone" aria-pressed="false">🎤</button></div>
+<p id="fbhint" class="muted">Tap the mic, or use the microphone on the keyboard.</p>
+<button class="btn huge" id="fbsend" type="button" onclick="sendFeedback()">Send feedback</button>
+<p id="fbthanks" class="muted" hidden></p></div>`;
+  bindSpeech('fbmic', 'fbtext', 'fbhint');
+}
+async function sendFeedback() {
+  const text = ($('#fbtext') && $('#fbtext').value || '').trim();
+  const thanks = $('#fbthanks');
+  const show = (t) => { if (thanks) { thanks.hidden = false; thanks.textContent = t; } };
+  if (!text) { show('Write a note first.'); return; }
+  const b = $('#fbsend');
+  if (b) { b.disabled = true; b.textContent = 'Sending…'; }
+  try {
+    await api({ a: 'feedback', pin: ownerPin(), role, text });
+    if ($('#fbtext')) $('#fbtext').value = '';
+    show('Thank you. Your note was saved.');
+  } catch (e) {
+    show(e.message || 'Could not save that note.');
+  } finally {
+    if (b) { b.disabled = false; b.textContent = 'Send feedback'; }
+  }
+}
 function go(v) {
   RC = null; view = v; cur = null; PAYING = '';
   if (v !== 'cust') CK = '';
-  try { api({ a: 'log', what: 'opened ' + ({ cust: 'Customers', books: 'Bookkeeping', set: 'Settings', gal: 'Gallery' }[v] || v), role: role, ua: '' }).catch(function () {}); } catch (e) {}
+  try { api({ a: 'log', what: 'opened ' + ({ cust: 'Customers', books: 'Bookkeeping', set: 'Settings', gal: 'Gallery', fb: 'Feedback' }[v] || v), role: role, ua: '' }).catch(function () {}); } catch (e) {}
   render();
   window.scrollTo(0, 0);
 }
@@ -710,8 +785,9 @@ function applyFill(f) {
   if (cureText) setChoice('cure', cureText, CURES);
   else if (timeline) setChoice('cure', timeline, CURES);
   put('rate', f.rate);
-  const notes = [f.notes, f.extras, cureText && timeline ? timeline : ''].map((v) => (v == null ? '' : String(v).trim())).filter(Boolean).join('\n');
-  if (notes && $('#qt')) $('#qt').value = notes;
+  put('addl', f.notes);
+  const extraBits = [f.extras, cureText && timeline ? timeline : ''].map((v) => (v == null ? '' : String(v).trim())).filter(Boolean).join('\n');
+  if (extraBits && $('#qt')) $('#qt').value = extraBits;
   if (f.name || f.phone || f.email || f.address) {
     const acc = document.getElementById('acc-qc');
     if (acc) acc.classList.add('open');
@@ -770,6 +846,13 @@ function localCure(low) {
   for (const [re, name] of rules) if (re.test(low)) return name;
   return '';
 }
+function localAddl(raw) {
+  const m = String(raw || '').match(/\b(?:please note|note that|additional note|gate code|dogs? |pets? |call before|customer (?:wants|asked))\b[^.]{0,180}/i);
+  if (!m) return '';
+  const s = m[0].replace(/\s+/g, ' ').trim();
+  if (s.length < 8) return '';
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
 function localFillFields(text) {
   const raw = String(text || '').trim();
   const out = {};
@@ -787,8 +870,10 @@ function localFillFields(text) {
   if (cure) out.cure = cure;
   const color = localColor(raw);
   if (color) out.color = color;
+  const addl = localAddl(raw);
+  if (addl) out.notes = addl;
   const items = SCCQuote.rewriteQuote(raw);
-  if (items.length > 1) out.notes = items.slice(1).map((it) => [it.title, it.detail].filter(Boolean).join(' - ')).join('\n');
+  if (items.length > 1) out.extras = items.slice(1).map((it) => [it.title, it.detail].filter(Boolean).join(' - ')).join('\n');
   return out;
 }
 async function fillQuote() {
@@ -815,17 +900,21 @@ async function fillQuote() {
   }
 }
 function newq(pre) {
+  const editing = !!(pre && pre.id);
+  if (editing) editId = pre.id;
+  else editId = '';
   photos = [];
   ACC = {};
   cur = null;
   if (pre && typeof pre === 'object') ACC.qc = true;
   A.innerHTML = `<div class="card">
 <label style="margin-top:0">Talk it through</label>
-<textarea id="talk" rows="8" style="min-height:180px" placeholder="Pat at 1 Call Street, 480 sq ft garage, full flake in Dominion, grind and crack repair, 6.50 a sq ft, back in 24 hours"></textarea>
-<p class="muted">Tap the microphone on the keyboard. Dictation works in this box.</p>
+<div class="talkbox"><textarea id="talk" rows="8" style="min-height:180px" placeholder="Pat at 1 Call Street, 480 sq ft garage, full flake in Dominion, grind and crack repair, 6.50 a sq ft, back in 24 hours"></textarea><button class="talkmic" id="talkmic" type="button" aria-label="Microphone" aria-pressed="false">🎤</button></div>
+<p id="talkhint" class="muted">Tap the mic, or use the microphone on the keyboard.</p>
 <button class="btn d" id="fillbtn" type="button" onclick="fillQuote()">Fill in the quote</button>
 <p id="fillnote" class="muted" hidden></p>
-<h2>New quote</h2>
+<h2>${editing ? 'Edit quote' : 'New quote'}</h2>
+${editing ? `<p class="muted" id="estkeep" style="margin-top:0">${esc(pre.est || 'Estimate')} stays this number.</p>` : ''}
 ${acc('qc', 'Customer details', 'Tap to enter name, address, email', `<label>Customer name</label><input id="nm" autocomplete="name" oninput="cs()"><label>Address</label><div style="position:relative"><input id="ad" autocomplete="off" autocapitalize="words" placeholder="Start typing the Tallahassee address" oninput="cs()"><div class="sug" id="adsug" hidden></div></div><label>Customer email</label><input id="em" type="email" inputmode="email" autocomplete="off" placeholder="Saved on the job" oninput="cs()"><label>Customer phone (optional)</label><input id="ph" type="tel" inputmode="tel" autocomplete="off" placeholder="For call and text from Customers" oninput="cs()">${TEST_MODE ? `<p class="muted">Test mode is on. This address is stored on the job. The estimate email goes only to ${esc(TEST_TO)}.</p>` : '<p class="muted">This email is where the estimate is sent.</p>'}`)}
 <label>Square footage</label><input id="sqft" inputmode="decimal" placeholder="480" oninput="livePrice()">
 <p id="ailabel" hidden style="font-weight:700;color:#9a3412;margin:8px 0 0">AI estimate, verify on site</p>
@@ -839,6 +928,7 @@ ${acc('qc', 'Customer details', 'Tap to enter name, address, email', `<label>Cus
 <label>Cure / return to service</label><select id="cure"><option value="">Choose</option>${CURES.map((s) => `<option>${esc(s)}</option>`).join('')}</select>
 <label>Price per sq ft</label><input id="rate" inputmode="decimal" placeholder="6.50" oninput="livePrice()">
 <p id="liveprice"></p>
+${editing ? '<p class="muted">The line prices below are what get saved. Change a line if the square footage or rate changed.</p>' : ''}
 <label>Concrete hardness (Mohs 1–10)</label><select id="hard" onchange="hardHint()">${hardOpts('')}</select>
 <label>How it was measured (optional)</label><input id="hardhow" autocomplete="off" placeholder="Penny scratch on the garage apron">
 <p class="muted" id="hardhint"></p>
@@ -846,11 +936,14 @@ ${acc('qc', 'Customer details', 'Tap to enter name, address, email', `<label>Cus
 <input type="file" id="pf" accept="image/*" capture="environment" multiple hidden onchange="pick(this,showP)"><button class="btn d" type="button" onclick="$('#pf').click()">📷 Take photo</button>
 ${acc('qp', 'Photo attachments (0)', 'No photos yet', '<div id="pp"></div>')}
 <label>Notes (talk or type)</label><textarea id="qt" rows="5" placeholder="480 sq ft two-car garage, full flake in Dominion, grind and crack repair, $6.50 a sq ft, back in 24 hours"></textarea>
+<label>Notes for customer</label><textarea id="addl" rows="4" placeholder="What the price includes, a gate code, or when to call."></textarea>
+<p class="muted">Shown under the total on the estimate, PDF, invoice, and answer page, as Additional notes. Optional. Not a line and not a price.</p>
 <button class="btn mic" id="mb" type="button">🎤 Talk</button>
-<button class="btn huge d" type="button" onclick="prev()">Preview polished quote →</button>
+${editing ? '' : '<button class="btn huge d" type="button" onclick="prev()">Preview polished quote →</button>'}
 <div id="pv"></div>
-<button class="btn gr" type="button" onclick="render()">Cancel</button></div>`;
+<button class="btn gr" type="button" onclick="cancelQ()">Cancel</button></div>`;
   mic('mb', 'qt');
+  bindSpeech('talkmic', 'talk', 'talkhint');
   addrAC('ad', cs);
   livePrice();
   hardHint();
@@ -860,8 +953,43 @@ ${acc('qp', 'Photo attachments (0)', 'No photos yet', '<div id="pp"></div>')}
     $('#em').value = pre.email || '';
     if ($('#ph')) $('#ph').value = pre.phone || '';
     cs();
-    $('#qt').focus();
+    if (!editing) $('#qt').focus();
   }
+  if (editing) {
+    $('#sqft').value = pre.sqft == null ? '' : pre.sqft;
+    setChoice('system', pre.system, SYSTEMS);
+    $('#color').value = pre.color || '';
+    setPrep(pre.prep);
+    setChoice('cure', pre.cure, CURES);
+    $('#rate').value = pre.rate == null ? '' : pre.rate;
+    if ($('#hard')) $('#hard').value = pre.hardness === 0 || pre.hardness ? String(pre.hardness) : '';
+    if ($('#hardhow')) $('#hardhow').value = pre.hardnessHow || '';
+    if ($('#qt')) $('#qt').value = pre.quote || '';
+    if ($('#addl')) $('#addl').value = pre.additionalNotes || '';
+    IT = (pre.items || []).map((i) => ({
+      title: i.title || '',
+      detail: i.detail || '',
+      price: i.price == null || i.price === '' ? null : Number(i.price)
+    }));
+    livePrice();
+    hardHint();
+    cs();
+    ACC.qi = true;
+    drawPv();
+  }
+}
+function editQuote(id) {
+  const j = jobs.find((x) => x.id === id);
+  if (!j) return;
+  newq(j);
+  window.scrollTo(0, 0);
+}
+function cancelQ() {
+  const id = editId;
+  editId = '';
+  IT = [];
+  if (id) { cur = id; render(); window.scrollTo(0, 0); }
+  else render();
 }
 function cs() {
   const n = $('#nm') && $('#nm').value.trim();
@@ -898,14 +1026,17 @@ ${acc('qi', 'Line items (' + IT.length + ')', SCCQuote.money(t) + ' total · tap
 ${IT.map((i, n) => `<div style="border-bottom:1px solid #e6e8ee;padding:8px 0"><input value="${esc(i.title)}" oninput="IT[${n}].title=this.value" style="font-weight:700"><textarea rows="2" oninput="IT[${n}].detail=this.value" style="margin-top:6px;font-size:15px">${esc(i.detail || '')}</textarea><div class="row"><input inputmode="decimal" placeholder="Price" value="${i.price ?? ''}" oninput="IT[${n}].price=this.value===''?null:Number(this.value.replace(/[$,]/g,''));itSum()"><button class="btn gr" style="margin:0;flex:0 0 110px" type="button" onclick="IT.splice(${n},1);drawPv()">Remove</button></div></div>`).join('')}
 <button class="btn gr" type="button" onclick="IT.push({title:'',detail:'',price:null});drawPv()">+ Add line</button>`)}
 <p style="font-size:22px;text-align:right"><b>Total: <span id="tot">${SCCQuote.money(t)}</span></b></p>
-<button class="btn huge" id="sq" type="button" onclick="sendQ()">Send quote email + PDF</button></div>`;
-  $('#pv').scrollIntoView({ behavior: 'smooth' });
+${editId
+    ? '<button class="btn huge" id="sqsave" type="button" onclick="saveEdit(false)">Save quote</button><button class="btn huge d" id="sq" type="button" onclick="saveEdit(true)">Send updated estimate</button>'
+    : '<button class="btn huge" id="sq" type="button" onclick="sendQ()">Send quote email + PDF</button>'}
+</div>`;
+  if (!editId) $('#pv').scrollIntoView({ behavior: 'smooth' });
 }
 async function sendQ() {
   const f = fieldVals();
   const d = {
     a: 'create', name: $('#nm').value.trim(), address: $('#ad').value.trim(), email: $('#em').value.trim(), phone: ($('#ph') ? $('#ph').value.trim() : ''),
-    quote: $('#qt').value, sqft: f.sqft, system: f.system, color: f.color, prep: f.prep, cure: f.cure, rate: f.rate,
+    quote: $('#qt').value, additionalNotes: ($('#addl') && $('#addl').value.trim()) || '', sqft: f.sqft, system: f.system, color: f.color, prep: f.prep, cure: f.cure, rate: f.rate,
     hardness: $('#hard') ? $('#hard').value : '', hardnessHow: $('#hardhow') ? $('#hardhow').value.trim() : '',
     items: IT.filter((i) => i.title && i.title.trim()), photos
   };
@@ -918,6 +1049,34 @@ async function sendQ() {
     await refresh();
     render();
   } catch (e) { toast(e.message); $('#sq').disabled = false; $('#sq').textContent = 'Send quote email + PDF'; }
+}
+async function saveEdit(send) {
+  const id = editId;
+  const f = fieldVals();
+  const d = {
+    a: 'qedit', id, send: !!send,
+    name: $('#nm').value.trim(), address: $('#ad').value.trim(), email: $('#em').value.trim(), phone: ($('#ph') ? $('#ph').value.trim() : ''),
+    quote: $('#qt').value, additionalNotes: ($('#addl') && $('#addl').value.trim()) || '', sqft: f.sqft, system: f.system, color: f.color, prep: f.prep, cure: f.cure, rate: f.rate,
+    hardness: $('#hard') ? $('#hard').value : '', hardnessHow: $('#hardhow') ? $('#hardhow').value.trim() : '',
+    items: IT.filter((i) => i.title && i.title.trim())
+  };
+  if (d.email && !SCCQuote.validEmail(d.email)) return toast('That email does not look right. Check it.');
+  const b = send ? $('#sq') : $('#sqsave');
+  const other = send ? $('#sqsave') : $('#sq');
+  if (b) { b.disabled = true; b.textContent = send ? 'Sending…' : 'Saving…'; }
+  if (other) other.disabled = true;
+  try {
+    const r = await api(d);
+    editId = '';
+    toast(send ? (r.job && r.job.emailed === false ? 'Estimate saved' : sentMsg('Estimate')) : 'Quote saved');
+    await refresh();
+    cur = id;
+    jview(id);
+  } catch (e) {
+    toast(e.message);
+    if (b) { b.disabled = false; b.textContent = send ? 'Send updated estimate' : 'Save quote'; }
+    if (other) other.disabled = false;
+  }
 }
 async function fixEmail(id) {
   const e = prompt('Customer email');
@@ -1025,6 +1184,7 @@ ${TEST_MODE ? `<p class="muted">Test mode: emails go only to ${esc(TEST_TO)}</p>
     return;
   }
   h += hardCard(j);
+  h += `<div class="card"><h2>Notes for customer</h2><p class="muted" style="margin-top:0">Shown under the total on the estimate, PDF, invoice, and answer page, as Additional notes. Not a line item and not a price. Hardness and the Notes tab stay off those pages.</p><textarea id="addl" rows="4" placeholder="Price includes a double topcoat. One topcoat lowers the price.">${esc(j.additionalNotes || '')}</textarea><button class="btn n" id="addlsave" type="button" onclick="saveAddl('${id}')">Save</button></div>`;
   h += acc(K('jd'), 'Job details', (j.est || 'Quote') + ' · ' + (j.email || 'no email'), `${j.est ? '<p class="muted">' + esc(j.est) + (j.pdf ? ` · <a href="${esc(j.pdf)}" target="_blank" rel="noopener">PDF</a>` : '') + '</p>' : ''}<p>📧 ${esc(j.email) || '<b style="color:#b91c1c">No email on job</b>'} <a href="#" onclick="fixEmail('${id}');return false">edit</a></p><p>📞 ${j.phone ? `<a href="tel:${telH(j.phone)}">${esc(fmtPh(j.phone))}</a>` : 'No phone'} <a href="#" onclick="editPhone(['${id}']);return false">${j.phone ? 'edit' : 'add'}</a></p>${j.response ? '<p><b>Customer answer:</b> ' + esc(j.response.label) + (j.response.text ? ' — ' + esc(j.response.text) : '') + '</p>' : ''}${av(j) ? '<p><b>Availability:</b> ' + esc(av(j)) + '</p>' : ''}${specHtml(j)}${j.notes ? '<p>' + esc(j.notes) + '</p>' : ''}${j.crewNotes ? '<p><b>Job notes:</b> ' + esc(j.crewNotes) + '</p>' : ''}${j.folder ? `<p><a href="${esc(j.folder)}" target="_blank" rel="noopener">Project photos in Drive</a></p>` : ''}`);
   h += acc(K('li'), 'Line items (' + li + ')', tot ? tot + ' total' : 'Scope and price', items(j));
   if (np && st !== 'approved') h += acc(K('ph'), 'Photos (' + np + ')', 'Quote ' + (j.photos || []).length + ' · Before/After ' + (j.crew || []).length, ((j.photos || []).length ? '<label>Quote photos</label>' + imgs(j.photos) : '') + ((j.crew || []).length ? '<label>Before / After</label>' + imgs(j.crew) : ''));
@@ -1049,6 +1209,19 @@ ${acc(K('jn'), 'Job notes', j.crewNotes ? esc(String(j.crewNotes).slice(0, 60)) 
   A.innerHTML = h;
   hardHint();
   if (st === 'approved') mic('cm', 'cn');
+}
+async function saveAddl(id) {
+  const b = $('#addlsave');
+  if (b) { b.disabled = true; b.textContent = 'Saving…'; }
+  try {
+    await api({ a: 'addl', id, additionalNotes: ($('#addl') && $('#addl').value) || '' });
+    await refresh();
+    jview(id);
+    toast('Notes saved');
+  } catch (e) {
+    toast(e.message);
+    if (b) { b.disabled = false; b.textContent = 'Save'; }
+  }
 }
 async function saveHard(id) {
   const b = $('#hardsave');

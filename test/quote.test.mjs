@@ -218,6 +218,43 @@ test('hardness, notes, and AI measure notes never reach a customer-facing render
   assert.doesNotMatch(q.responseThanksHtml(face(dirty)), /ZXNOTE/);
 });
 
+test('additional notes sit under the total and stay off the recap and review', () => {
+  const note = 'Gate code 12.\n<script>alert(1)</script>';
+  const job = {
+    id: 'SCC-3', est: 'SCC-EST-2026-0003', name: 'Pat Homeowner',
+    address: '1 Call St', email: 'pat@example.com',
+    items: [{ title: 'Garage Floor Flake System', detail: '480 sq ft', price: 3120 }],
+    total: 3120,
+    additionalNotes: note,
+    hardness: 8, hardnessHow: 'ZXHARD', internalNotes: [{ text: 'ZXNOTE' }], aiNote: 'ZXAI',
+    invoice: { amount: '$3,120.00', note: 'Due' },
+    crewNotes: 'Floor was clear.'
+  };
+  const o = {
+    co, colors, job, testMode: false, testTo: TEST_TO, logoSrc: 'cid:logo',
+    link: (k) => 'https://script.example/?ans=' + k,
+    ans: 'A', action: 'https://script.example/exec',
+    labels: { A: 'Approved', B: 'Approved with changes', C: 'Declined', O: 'Question / other' },
+    slots: ['Weekdays 8-12']
+  };
+  for (const name of ['quoteEmailHtml', 'pdfHtml', 'invoiceEmailHtml', 'responseFormHtml']) {
+    const html = q[name](o);
+    assert.match(html, /Additional notes/, name);
+    assert.match(html, /Gate code 12\.<br>/, name);
+    assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/, name);
+    assert.doesNotMatch(html, /<script>/, name);
+    assert.doesNotMatch(html, /ZXHARD|ZXNOTE|ZXAI/, name);
+  }
+  const blankJob = Object.assign({}, job, { additionalNotes: '   ' });
+  assert.doesNotMatch(q.quoteEmailHtml(Object.assign({}, o, { job: blankJob })), /Additional notes/);
+  assert.doesNotMatch(q.responseFormHtml(Object.assign({}, o, { job: blankJob })), /Additional notes/);
+  assert.doesNotMatch(q.recapEmailHtml(o), /Gate code 12|Additional notes/);
+  assert.doesNotMatch(q.reviewEmailHtml(o), /Gate code 12|Additional notes/);
+  const kept = q.customerJob(job);
+  assert.equal(kept.additionalNotes, note);
+  assert.equal(kept.hardness, undefined);
+});
+
 test('blank quote fields are omitted and the saved email wording is escaped', () => {
   const bare = {
     id: 'SCC-2', est: '', name: '', address: '', email: '',
