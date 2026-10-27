@@ -1446,25 +1446,58 @@ async function rcSave() {
     if (view === 'books' && !cur && !RC) { bookScreen(); window.scrollTo(0, 0); }
   } catch (e) { toast(e.message); b.disabled = false; b.textContent = 'Save expense'; }
 }
+function clipLine(s, empty) {
+  const t = String(s || '').replace(/\s+/g, ' ').trim();
+  if (!t) return empty;
+  return t.length > 52 ? t.slice(0, 50) + '…' : t;
+}
+function setSumText() {
+  const pay = ($('#sp') && $('#sp').value.trim()) || '';
+  const rev = ($('#sr') && $('#sr').value.trim()) || '';
+  const fin = ($('#sf') && $('#sf').value.trim()) || '';
+  const min = ($('#sm') && $('#sm').value.trim()) || '';
+  const body = (($('#qbody') && $('#qbody').value) || '').trim();
+  const sub = (($('#qsub') && $('#qsub').value) || '').trim();
+  const sign = (($('#qsign') && $('#qsign').value) || '').trim();
+  const first = body.split('\n').map((x) => x.trim()).filter(Boolean)[0] || '';
+  const stock = body === SCCQuote.QUOTE_EMAIL_BODY && sub === SCCQuote.QUOTE_EMAIL_SUBJECT && sign === SCCQuote.QUOTE_EMAIL_SIGN;
+  const write = (id, text) => { const el = document.getElementById('ssum-' + id); if (el) el.textContent = text; };
+  write('pay', clipLine(pay, 'No payment link'));
+  write('rev', clipLine(rev, 'No review link'));
+  write('fin', fin ? clipLine(fin, '') : ('No financing link' + (min ? ' · from $' + min : '')));
+  write('mail', stock ? 'Default wording' : clipLine(first || sub, 'Default wording'));
+}
+function tgSet(id) {
+  const e = document.getElementById('srow-' + id);
+  if (!e) return;
+  e.classList.toggle('open');
+  const b = e.querySelector('.srowh');
+  if (b) b.setAttribute('aria-expanded', e.classList.contains('open') ? 'true' : 'false');
+  setSumText();
+}
+function srow(id, title, body) {
+  return `<div class="srow" id="srow-${id}"><button type="button" class="srowh" aria-expanded="false" onclick="tgSet('${id}')"><span><b>${title}</b><small id="ssum-${id}"></small></span><i aria-hidden="true">›</i></button><div class="srowb">${body}</div></div>`;
+}
 function setScreen() {
   const S = SET || {};
   A.innerHTML = `<button class="btn gr" type="button" style="margin:0 0 12px" onclick="homeBtn()">← Home</button>
-<div class="card"><h2>Settings</h2><p class="muted" style="margin:0">Links customers see in their emails. Leave a box empty to hide that button.</p></div>
-<div class="card"><h2>Payments</h2><label>Payment link (Stripe, Square or PayPal)</label><input id="sp" type="url" inputmode="url" autocomplete="off" autocapitalize="off" placeholder="https://..." value="${esc(S.payLink || '')}">
-<p class="muted" style="margin:6px 0 0">Adds a Pay now button to quote and invoice emails. Create a payment link in Stripe, Square or PayPal and paste it here.</p></div>
-<div class="card"><h2>Reviews</h2><label>Google review link</label><input id="sr" type="url" inputmode="url" autocomplete="off" autocapitalize="off" placeholder="https://g.page/r/.../review" value="${esc(S.reviewLink || '')}">
-<p class="muted" style="margin:6px 0 0">Used by the Request review button on finished and paid jobs. In your Google Business Profile, tap Ask for reviews and copy the link.</p></div>
-<div class="card"><h2>Pay over time</h2><label>Financing link</label><input id="sf" type="url" inputmode="url" autocomplete="off" autocapitalize="off" placeholder="https://..." value="${esc(S.finLink || '')}">
-<label>Show it on quotes and invoices of at least ($)</label><input id="sm" inputmode="decimal" value="${esc(S.finMin == null ? 1000 : S.finMin)}">
-<p class="muted" style="margin:6px 0 0">Adds a Pay over time button. Hidden when no link is set or the amount is below this number.</p></div>
-<div class="card"><h2>Customer email</h2>
-<p class="muted" style="margin:0 0 8px">This wording is the estimate email. A blank box keeps the original line.</p>
-<label>Subject</label><textarea id="qsub" rows="2">${esc(S.quoteSubject || SCCQuote.QUOTE_EMAIL_SUBJECT)}</textarea>
-<label>Message</label><textarea id="qbody" rows="6">${esc(S.quoteBody || SCCQuote.QUOTE_EMAIL_BODY)}</textarea>
-<label>Sign-off</label><textarea id="qsign" rows="3">${esc(S.quoteSign || SCCQuote.QUOTE_EMAIL_SIGN)}</textarea>
+<h2 style="margin:0 0 4px">Settings</h2>
+<p class="muted" style="margin:0 0 12px">Links customers see in their emails. Leave a box empty to hide that button.</p>
+${srow('pay', 'Payments', `<label>Payment link (Stripe, Square or PayPal)</label><input id="sp" type="url" inputmode="url" autocomplete="off" autocapitalize="off" placeholder="https://..." value="${esc(S.payLink || '')}" oninput="setSumText()">
+<p class="muted" style="margin:6px 0 0">Adds a Pay now button to quote and invoice emails. Create a payment link in Stripe, Square or PayPal and paste it here.</p>`)}
+${srow('rev', 'Reviews', `<label>Google review link</label><input id="sr" type="url" inputmode="url" autocomplete="off" autocapitalize="off" placeholder="https://g.page/r/.../review" value="${esc(S.reviewLink || '')}" oninput="setSumText()">
+<p class="muted" style="margin:6px 0 0">Used by the Request review button on finished and paid jobs. In your Google Business Profile, tap Ask for reviews and copy the link.</p>`)}
+${srow('fin', 'Pay over time', `<label>Financing link</label><input id="sf" type="url" inputmode="url" autocomplete="off" autocapitalize="off" placeholder="https://..." value="${esc(S.finLink || '')}" oninput="setSumText()">
+<label>Show it on quotes and invoices of at least ($)</label><input id="sm" inputmode="decimal" value="${esc(S.finMin == null ? 1000 : S.finMin)}" oninput="setSumText()">
+<p class="muted" style="margin:6px 0 0">Adds a Pay over time button. Hidden when no link is set or the amount is below this number.</p>`)}
+${srow('mail', 'Customer email', `<p class="muted" style="margin:0 0 8px">This wording is the estimate email. A blank box keeps the original line.</p>
+<label>Subject</label><textarea id="qsub" rows="2" oninput="setSumText()">${esc(S.quoteSubject || SCCQuote.QUOTE_EMAIL_SUBJECT)}</textarea>
+<label>Message</label><textarea id="qbody" rows="6" oninput="setSumText()">${esc(S.quoteBody || SCCQuote.QUOTE_EMAIL_BODY)}</textarea>
+<label>Sign-off</label><textarea id="qsign" rows="3" oninput="setSumText()">${esc(S.quoteSign || SCCQuote.QUOTE_EMAIL_SIGN)}</textarea>
 <p class="muted">Line breaks stay. {name}, {estimate}, and {address} fill in for that customer.</p>
-<button class="btn gr" id="qreset" type="button" onclick="resetEmailCopy()">Reset to default</button></div>
+<button class="btn gr" id="qreset" type="button" onclick="resetEmailCopy()">Reset to default</button>`)}
 <button class="btn huge" id="ss" type="button" onclick="saveSet()">Save settings</button>`;
+  setSumText();
 }
 function resetEmailCopy() {
   if ($('#qsub')) $('#qsub').value = SCCQuote.QUOTE_EMAIL_SUBJECT;

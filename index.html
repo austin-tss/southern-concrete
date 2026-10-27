@@ -54,6 +54,17 @@ a.btn{text-decoration:none;text-align:center;color:#fff}
 .accb{display:none;padding:4px 16px 16px}
 .acc.open .accb{display:block}
 #acc-qc{overflow:visible}
+.srow{background:#fff;border-radius:14px;margin:0 0 10px;border:2px solid var(--line);box-shadow:0 1px 4px rgba(17,24,39,.08);overflow:hidden}
+.srowh{display:flex;align-items:center;gap:12px;width:100%;min-height:72px;padding:12px 14px;background:#fff;border:0;text-align:left;color:var(--n);cursor:pointer}
+.srowh span{flex:1;min-width:0}
+.srowh b{display:block;font-size:18px}
+.srowh small{display:block;margin-top:2px;font-size:14px;font-weight:400;color:#5c6370;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.srowh i{flex:0 0 auto;font-style:normal;font-size:28px;line-height:1;color:var(--g);transition:transform .18s}
+.srow.open{border-color:var(--g)}
+.srow.open .srowh i{transform:rotate(90deg)}
+.srowb{display:none;padding:0 14px 14px}
+.srow.open .srowb{display:block}
+.srowb label:first-of-type{margin-top:2px}
 .mic{background:var(--dg)}.mic.on{background:#9a3412}
 .muted{color:#5c6370;font-size:14px}
 .spec p{margin:8px 0;font-size:18px}
