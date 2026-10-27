@@ -10,9 +10,6 @@ let GALS = [], GQ = '', GVIEW = [], GI = 0, GPIC = '', GX = 0;
 const $ = (s) => document.querySelector(s);
 const A = $('#app');
 let SKIPNAV = false;
-let MILES = [];
-let MLOAD = false;
-let MREADY = false;
 let CEDIT = false;
 let FORM = null;
 function themeName() {
@@ -287,6 +284,7 @@ function paint() {
     sessionStorage.sccRole = '';
     role = '';
   }
+  if (view === 'mile') view = '';
   const sub = !!(role && (cur || view || editId));
   navBar(sub);
   if (!role) {
@@ -300,7 +298,6 @@ function paint() {
   if (view === 'set') return setScreen();
   if (view === 'gal') return galScreen();
   if (view === 'fb') return feedbackScreen();
-  if (view === 'mile') return mileScreen();
   if (view === 'sched') return sched();
   home();
 }
@@ -552,7 +549,6 @@ function home() {
       ['tile-cust', "go('cust')", '☺', 'Customers'],
       ['tile-gal', "go('gal')", '▦', 'Gallery'],
       ['tile-rc', "go('books')", '▤', 'Receipts'],
-      ['tile-mile', "go('mile')", '⌖', 'Mileage'],
       ['tile-sched', "go('sched')", '◷', 'Schedule'],
       ['tile-set', "go('set')", '⚙', 'Settings']
     ];
@@ -567,7 +563,6 @@ ${list}
 <button class="btn huge" type="button" onclick="go('gal')">Gallery</button>
 ${list}
 <div class="row"><button class="btn gr" type="button" onclick="refresh().then(render)">↻ Refresh</button><button class="btn gr" type="button" onclick="go('set')">⚙️ Settings</button></div>
-<button class="btn n" type="button" onclick="go('mile')">Mileage</button>
 <button class="btn gr" type="button" onclick="go('sched')">Schedule</button>
 <button class="btn n" id="fbhome" type="button" onclick="go('fb')">Feedback</button>`;
   }
@@ -601,9 +596,10 @@ async function sendFeedback() {
   }
 }
 function go(v) {
+  if (v === 'mile') return navHome();
   RC = null; view = v; cur = null; PAYING = '';
   if (v !== 'cust') CK = '';
-  try { api({ a: 'log', what: 'opened ' + ({ cust: 'Customers', books: 'Bookkeeping', set: 'Settings', gal: 'Gallery', fb: 'Feedback', mile: 'Mileage', sched: 'Schedule' }[v] || v), role: role, ua: '' }).catch(function () {}); } catch (e) {}
+  try { api({ a: 'log', what: 'opened ' + ({ cust: 'Customers', books: 'Bookkeeping', set: 'Settings', gal: 'Gallery', fb: 'Feedback', sched: 'Schedule' }[v] || v), role: role, ua: '' }).catch(function () {}); } catch (e) {}
   render();
   markNav();
   window.scrollTo(0, 0);
@@ -1957,7 +1953,6 @@ function setPayload() {
     quoteBody: $('#qbody') ? $('#qbody').value.trim() : ((SET && SET.quoteBody) || ''),
     quoteSign: $('#qsign') ? $('#qsign').value.trim() : ((SET && SET.quoteSign) || ''),
     theme: themeName(),
-    mileRate: $('#mrate') ? $('#mrate').value : (SET && SET.mileRate != null ? SET.mileRate : 0.7),
     form: FORM || formCfg()
   };
 }
@@ -1986,7 +1981,6 @@ ${srow('mail', 'Customer email', `<p class="muted" style="margin:0 0 8px">This w
 <p class="muted">Line breaks stay. {name}, {estimate}, and {address} fill in for that customer.</p>
 <button class="btn gr" id="qreset" type="button" onclick="resetEmailCopy()">Reset to default</button>`)}
 ${srow('form', 'Quote form', formEditorHtml())}
-${srow('mile', 'Mileage rate', `<label>IRS rate per mile ($)</label><input id="mrate" inputmode="decimal" value="${esc(S.mileRate == null ? 0.7 : S.mileRate)}"><p class="muted">Used for the mileage deduction total.</p>`)}
 ${qboRow()}
 <button class="btn huge" id="ss" type="button" onclick="saveSet()">Save settings</button>`;
   setSumText();
@@ -2012,62 +2006,5 @@ async function saveSet(quiet) {
     if (b) { b.disabled = false; b.textContent = 'Save settings'; }
   }
 }
-function mileMiles(t) {
-  const start = Number(t.start), end = Number(t.end), direct = Number(t.miles);
-  if (direct > 0) return direct;
-  if (end > start && start >= 0) return Math.round((end - start) * 10) / 10;
-  return 0;
-}
-function mileScreen() {
-  if (!MREADY && !MLOAD) {
-    MLOAD = true;
-    api({ a: 'milelist', pin: ownerPin() }).then((r) => { MILES = r.trips || []; if (r.mileRate != null) SET.mileRate = r.mileRate; MREADY = true; MLOAD = false; if (view === 'mile') mileScreen(); }).catch((e) => { MLOAD = false; toast(e.message); });
-  }
-  const rate = Number(SET.mileRate == null ? 0.7 : SET.mileRate) || 0.7;
-  const cm = todayET().slice(0, 7), cy = todayET().slice(0, 4);
-  let mM = 0, mY = 0;
-  MILES.forEach((t) => { const n = mileMiles(t); if (String(t.date).slice(0, 7) === cm) mM += n; if (String(t.date).slice(0, 4) === cy) mY += n; });
-  const opts = jobs.map((j) => `<option value="${esc(j.id)}">${esc(j.name)} · ${esc(j.address || '')}</option>`).join('');
-  A.innerHTML = `<div class="card"><h2>Mileage</h2>
-<div class="kv"><span>This month</span><b>${mM.toFixed(1)} mi · ${m0(mM * rate)}</b></div>
-<div class="kv"><span>This year</span><b>${mY.toFixed(1)} mi · ${m0(mY * rate)}</b></div>
-<p class="muted" style="margin:8px 0 0">Deduction uses $${rate.toFixed(2)} per mile.</p></div>
-<div class="card"><h2>Add a trip</h2>
-<label>Date</label><input id="mdate" type="date" value="${todayET()}">
-<label>Job</label><select id="mjob"><option value="">No job</option>${opts}</select>
-<label>Odometer start</label><input id="mstart" inputmode="decimal">
-<label>Odometer end</label><input id="mend" inputmode="decimal">
-<label>Miles, if you are not using the odometer</label><input id="mmiles" inputmode="decimal">
-<label>Purpose</label><input id="mpurpose" placeholder="Site visit">
-<label>Notes</label><textarea id="mnotes" rows="3"></textarea>
-<button class="btn huge" id="msave" type="button" onclick="addMile()">Save trip</button></div>
-<div class="card"><h2>Trips</h2>${MILES.length ? MILES.map((t) => `<div class="line"><b>${esc(usD(t.date))}</b> · ${mileMiles(t).toFixed(1)} mi<br><span>${esc(t.customer || t.purpose || 'Trip')}</span><br><a href="#" onclick="delMile('${esc(t.id)}');return false">Remove</a></div>`).join('') : '<p class="muted">No trips yet.</p>'}
-<button class="btn n" type="button" onclick="mileCsv()">Export CSV</button></div>`;
-}
-async function addMile() {
-  const job = jobs.find((j) => j.id === ($('#mjob') && $('#mjob').value));
-  const b = $('#msave');
-  if (b) { b.disabled = true; b.textContent = 'Saving…'; }
-  try {
-    const r = await api({
-      a: 'mileadd', pin: ownerPin(), date: $('#mdate').value, jobId: job ? job.id : '', customer: job ? job.name : '',
-      start: $('#mstart').value, end: $('#mend').value, miles: $('#mmiles').value, purpose: $('#mpurpose').value, notes: $('#mnotes').value
-    });
-    MILES = r.trips || [];
-    MREADY = true;
-    toast('Trip saved');
-    mileScreen();
-  } catch (e) { toast(e.message); if (b) { b.disabled = false; b.textContent = 'Save trip'; } }
-}
-async function delMile(id) {
-  try { const r = await api({ a: 'miledel', pin: ownerPin(), id }); MILES = r.trips || []; mileScreen(); }
-  catch (e) { toast(e.message); }
-}
-function mileCsv() {
-  const rows = ['Date,Job,Start,End,Miles,Purpose,Notes'];
-  MILES.forEach((t) => rows.push([t.date, t.customer, t.start, t.end, mileMiles(t), t.purpose, t.notes].map(csvT).join(',')));
-  dlCsv('southern-concrete-mileage-' + todayET() + '.csv', rows.join('\r\n') + '\r\n');
-}
-
 if (role) refresh().then(render);
 else render();
