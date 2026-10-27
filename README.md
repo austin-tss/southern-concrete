@@ -4,7 +4,15 @@ Field desk for [Southern Concrete Coatings](https://www.southernconcretecoatings
 
 The screen pattern follows the all-in-one Field Desk. [austin-tss/walker](https://github.com/austin-tss/walker) is the Walker Land Management app Austin named, and it was not readable from this account (GitHub returned 404). The matching all-in-one reference that was readable is [austin-tss/fielder-aio](https://github.com/austin-tss/fielder-aio): one project list, accordions, and one job screen with Step 1 Quote, Step 2 Do the job, and Step 3 Invoice. Wording, pricing, and colors are Southern Concrete Coatings.
 
-Live site: https://austin-tss.github.io/southern-concrete/
+Site address: https://austin-tss.github.io/southern-concrete/
+
+The files are on `main`. That address stays a 404 until GitHub Pages is turned on for the repo. The token used to publish this repo cannot create the Pages site (GitHub returns "Resource not accessible by integration"). A person with admin on the repo turns it on:
+
+1. Open https://github.com/austin-tss/southern-concrete/settings/pages
+2. Build and deployment → **Deploy from a branch**
+3. Branch **main**, folder **/ (root)**, then Save
+
+That is the same publishing setup as the other field desks. `.nojekyll` is already in the repo, so the desk is served from the root of `main`.
 
 ## What you see
 
@@ -56,9 +64,9 @@ The mock prints a URL. It stores jobs in memory and does not call Gmail or Drive
 
 ## Deploy the site
 
-GitHub Pages serves the static files. `.github/workflows/pages.yml` publishes `index.html`, `config.js`, `quote.js`, `app.js`, and `logo.png` from `main`.
+The one-time Pages switch is in the section above. After that, pushes to `main` are what GitHub publishes.
 
-The repo also has `.nojekyll`, so Pages can serve the same files straight from the `main` branch the way Fielder does.
+`.github/workflows/pages.yml` is the alternate path: source **GitHub Actions**. It copies `index.html`, `config.js`, `quote.js`, `app.js`, and `logo.png` into the Pages artifact. It cannot create the Pages site by itself. Once a person has turned Pages on and set the source to GitHub Actions, re-run that workflow.
 
 ## Connect Gmail and Drive
 
