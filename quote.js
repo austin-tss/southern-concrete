@@ -1,5 +1,5 @@
 /* Quote rewriter, per-sq-ft math, and email copy.
-   Shared by the field desk (browser) and Code.gs (Apps Script).
+   Shared by the browser app and Code.gs (Apps Script).
    No DOM, no secrets. */
 function round2(n){return Math.round(Number(n)*100)/100;}
 function money(v){
@@ -232,6 +232,20 @@ var TERMS=[
   'One-day installations are available on many garage floors. Heavier metallic and commercial systems can take longer.',
   'Payment is due when the floor is complete, unless the invoice says otherwise.'
 ];
+function payButtons(o){
+  var s=o.settings||{}, j=o.job||{}, amt=0;
+  if(j.invoice&&j.invoice.amount!=null&&String(j.invoice.amount)!=='') amt=Number(String(j.invoice.amount).replace(/[^0-9.\-]/g,''))||0;
+  else if(j.total!=null&&j.total!=='') amt=Number(j.total)||0;
+  function linkBtn(href,label,bg){
+    if(!href) return '';
+    return '<a href="'+escHtml(href)+'" style="display:block;margin:8px 0;padding:15px;background:'+bg+';color:#fff;text-decoration:none;border-radius:10px;font-weight:bold;font-size:16px;text-align:center">'+label+'</a>';
+  }
+  var min=s.finMin==null||s.finMin===''?1000:Number(String(s.finMin).replace(/[^0-9.\-]/g,''));
+  if(isNaN(min)) min=1000;
+  var html=linkBtn(s.payLink,'Pay now',o.colors.g);
+  if(s.finLink&&amt>=min) html+=linkBtn(s.finLink,'Pay over time',o.colors.n);
+  return html?'<div style="margin:16px 0">'+html+'</div>':'';
+}
 function quoteEmailHtml(o){
   var j=o.job,g=o.colors.g,dg=o.colors.dg,n=o.colors.n;
   function btn(k,t,c){
@@ -247,6 +261,7 @@ function quoteEmailHtml(o){
     btn('B','B) Approve with changes',dg)+
     btn('C','C) Decline for now','#8a8f98')+
     btn('O','Other — send a question',n)+'</div>'+
+    payButtons(o)+
     '<p style="font-size:13px;color:#5c6370;line-height:1.6"><b>Terms:</b> '+TERMS.join(' ')+'</p>'+
     '<p>Sincerely,<br><b>'+escHtml(o.co.name)+'</b></p>';
   return emailShell(Object.assign({},o,{title:'Estimate',sub:j.est}),inner);
@@ -284,6 +299,7 @@ function invoiceEmailHtml(o){
     metaBlock(j,'Invoice #',inv,o.colors)+specRows(j)+itemsTable(j,o.colors)+
     '<p style="font-size:18px;text-align:right"><b>Amount due: <span style="color:'+o.colors.dg+'">'+escHtml(v.amount)+'</span></b></p>'+
     (v.note?'<p>'+escHtml(v.note)+'</p>':'')+
+    payButtons(o)+
     '<p>Questions? Call '+escHtml(o.co.phone)+'.</p>';
   return emailShell(Object.assign({},o,{title:'Invoice',sub:inv}),inner);
 }

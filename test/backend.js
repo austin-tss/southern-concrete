@@ -1,6 +1,6 @@
-var TEST_MODE = true; // single server flag — keep identical to config.js TEST_MODE
+var TEST_MODE = false; // single server flag — keep identical to config.js TEST_MODE
 var TEST_TO = 'austin@techsourcedsolutions.com';
-var ROOT_NAME = 'Southern Concrete Coatings Field Desk';
+var ROOT_NAME = 'Southern Concrete Coatings';
 var CO = {
   name: 'Southern Concrete Coatings',
   legal: 'Southern Concrete Coatings LLC',
@@ -98,7 +98,7 @@ function sendMail_(msg) {
   MailApp.sendEmail(payload);
 }
 function mailOpts_(j) {
-  return { co: CO, colors: COLORS, job: view_(j), testMode: TEST_MODE, testTo: TEST_TO, logoSrc: 'cid:logo' };
+  return { co: CO, colors: COLORS, job: view_(j), testMode: TEST_MODE, testTo: TEST_TO, logoSrc: 'cid:logo', settings: settings_() };
 }
 function makePdf_(j) {
   var html = pdfHtml(Object.assign(mailOpts_(j), { logoSrc: LOGO }));
@@ -170,8 +170,65 @@ function page_(body) {
     '<div class="w">' + body + '</div>'
   ).setTitle('Southern Concrete Coatings').addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
+
+var OWNER_PIN = '1234';
+function pinOk_(d) { return String(d && d.pin || '') === OWNER_PIN; }
+function loadObj_(n) {
+  var raw = '';
+  try { raw = file_(n).getBlob().getDataAsString() || ''; } catch (e) { raw = ''; }
+  if (!raw || raw === '[]') return {};
+  try {
+    var o = JSON.parse(raw);
+    if (!o || typeof o !== 'object' || Array.isArray(o)) return {};
+    return o;
+  } catch (e2) { return {}; }
+}
+function settings_() {
+  var o = loadObj_('settings.json');
+  var min = o.finMin == null || o.finMin === '' ? 1000 : Number(String(o.finMin).replace(/[^0-9.\-]/g, ''));
+  if (isNaN(min)) min = 1000;
+  return { payLink: String(o.payLink || ''), reviewLink: String(o.reviewLink || ''), finLink: String(o.finLink || ''), finMin: min, ocr: false };
+}
+function moneyNum_(v) {
+  var n = parseFloat(String(v == null ? '' : v).replace(/[^0-9.\-]/g, ''));
+  return isNaN(n) ? 0 : n;
+}
+function expenses_() {
+  var list = load_('expenses.json');
+  return Array.isArray(list) ? list : [];
+}
+function receiptsFolder_() {
+  var r = root_();
+  var it = r.getFoldersByName('Receipts');
+  return it.hasNext() ? it.next() : r.createFolder('Receipts');
+}
+function saveReceiptImage_(image) {
+  var parts = String(image || '').split(',');
+  if (parts.length < 2 || !parts[1]) throw new Error('No receipt photo');
+  var blob = Utilities.newBlob(Utilities.base64Decode(parts[1]), 'image/jpeg', 'receipt-' + Date.now() + '.jpg');
+  return receiptsFolder_().createFile(blob).getId();
+}
+function blankScan_(id) {
+  return { ok: true, receiptId: id || '', ocr: false, reason: 'none', data: {} };
+}
+function sendReview_(j) {
+  customerOk_(j);
+  var s = settings_();
+  if (!s.reviewLink) throw new Error('Add a Google review link in Settings first.');
+  var html = '<p style="font-size:16px">Hi ' + escHtml(j.name) + ',</p>' +
+    '<p style="line-height:1.6">Thank you for choosing Southern Concrete Coatings. If you were happy with the floor, a short Google review helps neighbors find us.</p>' +
+    '<a href="' + escHtml(s.reviewLink) + '" style="display:block;margin:16px 0;padding:15px;background:' + COLORS.g + ';color:#fff;text-decoration:none;border-radius:10px;font-weight:bold;font-size:16px;text-align:center">Leave a review</a>' +
+    '<p>Questions? Call ' + escHtml(CO.phone) + '.</p>';
+  sendMail_({
+    job: j,
+    subject: 'How did we do? Southern Concrete Coatings',
+    html: emailShell({ co: CO, colors: COLORS, job: view_(j), testMode: TEST_MODE, testTo: TEST_TO, logoSrc: 'cid:logo', title: 'How did we do?', sub: j.est || '' }, html),
+    inlineImages: { logo: logoBlob_() }
+  });
+}
 function doGet(e) {
   var p = (e && e.parameter) || {};
+  if (p.a === 'logins') return out_({ ok: true, logins: load_('logins.json') });
   if (p.a === 'img' && p.id) {
     var b = DriveApp.getFileById(p.id).getBlob();
     return out_({ ok: true, data: 'data:' + b.getContentType() + ';base64,' + Utilities.base64Encode(b.getBytes()) });
@@ -199,7 +256,7 @@ function doGet(e) {
       (j.response.text ? '<p>Your note: ' + escHtml(j.response.text) + '</p>' : '') +
       '<p>We will confirm the installation window. Questions? Call ' + CO.phone + '.</p>');
   }
-  return out_({ ok: true, testMode: TEST_MODE, testTo: TEST_MODE ? TEST_TO : '', root: root_().getUrl(), jobs: load_(), blocks: load_('blocks.json') });
+  return out_({ ok: true, test: TEST_MODE, testMode: TEST_MODE, testTo: TEST_MODE ? TEST_TO : '', root: root_().getUrl(), jobs: load_(), blocks: load_('blocks.json'), settings: settings_() });
 }
 function numField_(v) {
   if (v == null || v === '') return '';
@@ -212,6 +269,70 @@ function doPost(e) {
   L.waitLock(30000);
   var j, send = null, js;
   try {
+    if (d.a === 'signin') {
+      var lg = load_('logins.json');
+      lg.push({ t: new Date().toISOString(), role: String(d.role || ''), ua: String(d.ua || '').slice(0, 200) });
+      if (lg.length > 500) lg = lg.slice(-500);
+      save_(lg, 'logins.json');
+      return out_({ ok: true });
+    }
+    if (d.a === 'log') {
+      var act = load_('activity.json');
+      if (!Array.isArray(act)) act = [];
+      act.push({ t: new Date().toISOString(), what: String(d.what || '').slice(0, 200), role: String(d.role || ''), ua: String(d.ua || '').slice(0, 200) });
+      if (act.length > 500) act = act.slice(-500);
+      save_(act, 'activity.json');
+      return out_({ ok: true });
+    }
+    if (d.a === 'settings' || d.a === 'explist' || d.a === 'expadd' || d.a === 'expdel' || d.a === 'rcscan' || d.a === 'rcrescan' || d.a === 'rcdrop') {
+      if (!pinOk_(d)) return out_({ ok: false, err: 'Wrong PIN' });
+      if (d.a === 'settings') {
+        var curS = loadObj_('settings.json');
+        curS.payLink = String(d.payLink || '').trim();
+        curS.reviewLink = String(d.reviewLink || '').trim();
+        curS.finLink = String(d.finLink || '').trim();
+        var fm = Number(String(d.finMin == null ? '' : d.finMin).replace(/[^0-9.\-]/g, ''));
+        curS.finMin = isNaN(fm) ? 1000 : fm;
+        curS.ocr = false;
+        save_(curS, 'settings.json');
+        return out_({ ok: true, settings: settings_() });
+      }
+      if (d.a === 'explist') return out_({ ok: true, expenses: expenses_() });
+      if (d.a === 'expadd') {
+        var amt = moneyNum_(d.amount);
+        if (!(amt > 0)) return out_({ ok: false, err: 'Enter the amount' });
+        var ex = expenses_();
+        var receipt = String(d.receiptId || '');
+        if (!receipt && d.image) receipt = saveReceiptImage_(d.image);
+        var tax = (d.tax == null || d.tax === '') ? null : moneyNum_(d.tax);
+        ex.unshift({
+          id: 'EX' + Date.now().toString(36).toUpperCase(),
+          amount: amt,
+          category: String(d.category || 'Other'),
+          note: String(d.note || ''),
+          date: String(d.date || Utilities.formatDate(new Date(), 'America/New_York', 'yyyy-MM-dd')),
+          vendor: String(d.vendor || ''),
+          tax: tax,
+          items: d.items || [],
+          receipt: receipt,
+          scanned: !!d.scanned,
+          created: new Date().toISOString()
+        });
+        save_(ex, 'expenses.json');
+        return out_({ ok: true, expenses: ex });
+      }
+      if (d.a === 'expdel') {
+        var ex2 = expenses_().filter(function (x) { return x.id !== d.id; });
+        save_(ex2, 'expenses.json');
+        return out_({ ok: true, expenses: ex2 });
+      }
+      if (d.a === 'rcscan') return out_(blankScan_(saveReceiptImage_(d.image)));
+      if (d.a === 'rcrescan') return out_(blankScan_(d.id));
+      if (d.a === 'rcdrop') {
+        if (d.id) { try { DriveApp.getFileById(d.id).setTrashed(true); } catch (eDrop) {} }
+        return out_({ ok: true });
+      }
+    }
     js = load_();
     if (d.a === 'block' || d.a === 'unblock') {
       var bl = load_('blocks.json');
@@ -222,6 +343,19 @@ function doPost(e) {
       }
       save_(bl, 'blocks.json');
       return out_({ ok: true, blocks: bl, testMode: TEST_MODE });
+    }
+    if (d.a === 'delete') {
+      if (!pinOk_(d)) return out_({ ok: false, err: 'Wrong PIN' });
+      js = js.filter(function (x) { return x.id !== d.id; });
+      save_(js);
+      return out_({ ok: true });
+    }
+    if (d.a === 'phone') {
+      var ids = d.ids || [];
+      var ph = String(d.phone || '').trim();
+      js.forEach(function (x) { if (ids.indexOf(x.id) >= 0) x.phone = ph; });
+      save_(js);
+      return out_({ ok: true });
     }
     if (d.a === 'create') {
       if (d.email && !validEmail(d.email)) return out_({ ok: false, err: 'That customer email does not look valid.' });
@@ -234,6 +368,7 @@ function doPost(e) {
         name: d.name,
         address: d.address,
         email: String(d.email || '').trim(),
+        phone: String(d.phone || '').trim(),
         quote: d.quote || '',
         sqft: numField_(d.sqft),
         system: d.system || '',
@@ -273,11 +408,25 @@ function doPost(e) {
         if (!validEmail(d.email)) return out_({ ok: false, err: 'Invalid email' });
         j.email = String(d.email).trim();
       } else if (d.a === 'respond') respond_(j, d);
-      else if (d.a === 'resend') {
+      else if (d.a === 'resend' || d.a === 'resendquote') {
         if (!j.est) return out_({ ok: false, err: 'This job has no quote to resend' });
         send = sendQuote_;
         j.resent = (j.resent || 0) + 1;
         j.resentAt = new Date().toISOString();
+      } else if (d.a === 'markpaid') {
+        j.invoice = j.invoice || {};
+        j.invoice.paid = true;
+        j.invoice.paidAt = new Date().toISOString();
+        j.invoice.paidDate = String(d.date || '');
+        j.invoice.method = String(d.method || '');
+        j.invoice.amountPaid = moneyNum_(d.amount);
+        j.invoice.ref = String(d.ref || '');
+        if (!j.invoice.amount) j.invoice.amount = money(j.invoice.amountPaid);
+        if (!j.invoice.at) j.invoice.at = j.invoice.paidAt;
+        j.status = 'invoiced';
+      } else if (d.a === 'reqreview') {
+        j.review = { at: new Date().toISOString(), count: ((j.review && j.review.count) || 0) + 1 };
+        send = sendReview_;
       } else return out_({ ok: false, err: 'Bad action' });
     }
     if (send) {

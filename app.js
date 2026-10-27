@@ -1,9 +1,10 @@
-/* Southern Concrete Coatings Field Desk — one Owner login, one project screen. */
+/* Southern Concrete Coatings — one Owner login. */
 let API = new URLSearchParams(location.search).get('api') || localStorage.sccApi || API_URL || '';
 if (API) localStorage.sccApi = API;
 
 let blocks = [], role = sessionStorage.sccRole || '', jobs = [], root = '', cur = null, pin = '', photos = [];
-let serverTest = null;
+let serverTest = null, view = '', SET = {}, EXP = [], EXPL = false, EXPLOAD = false, PAYING = '', PAYM = 'check', CK = '', CQ = '', CL = [], SQ = '', tab = 'est';
+let RC = null, RCT = 0, RQ = [];
 const $ = (s) => document.querySelector(s);
 const A = $('#app');
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -43,15 +44,13 @@ async function refresh() {
     jobs = d.jobs || [];
     root = d.root || '';
     blocks = d.blocks || [];
-    serverTest = d.testMode;
+    serverTest = typeof d.test === 'boolean' ? d.test : d.testMode;
+    if (d.settings) SET = d.settings;
     const bar = $('#testbar');
-    if (d.testMode === false) {
-      bar.className = 'bad';
-      bar.textContent = 'Server test mode is OFF. Do not send customer mail until Code.gs TEST_MODE is true.';
-    }
+    if (bar) bar.hidden = !TEST_MODE && serverTest !== true;
   } catch (e) { toast(e.message); }
 }
-function logout() { sessionStorage.sccRole = ''; role = ''; cur = null; render(); }
+function logout() { sessionStorage.sccRole = ''; role = ''; cur = null; view = ''; CK = ''; PAYING = ''; SQ = ''; render(); }
 function shrink(f) {
   return new Promise((res) => {
     const i = new Image();
@@ -140,7 +139,7 @@ function big(i) {
 function nav(d) { if (GAL.length) big((gi + d + GAL.length) % GAL.length); }
 function setupCard() {
   if (API) return '';
-  return `<div class="card"><h2>Connect backend</h2><p class="muted">Paste the Apps Script web app URL (the one that ends in /exec). Drive folders and mail run there. Test mode stays on in config.js and Code.gs.</p><input id="apiu" placeholder="https://script.google.com/macros/s/.../exec"><button class="btn n" onclick="saveApi()">Save</button></div>`;
+  return `<div class="card"><h2>Connect backend</h2><p class="muted">Paste the Apps Script web app URL (the one that ends in /exec). Drive folders and mail run there.</p><input id="apiu" placeholder="https://script.google.com/macros/s/.../exec"><button class="btn n" onclick="saveApi()">Save</button></div>`;
 }
 function saveApi() {
   API = $('#apiu').value.trim();
@@ -148,20 +147,27 @@ function saveApi() {
   render();
 }
 function render() {
+  paint();
+  try { renderQ(); } catch (e) {}
+}
+function paint() {
   GAL = [];
-  ACC = {};
   $('#out').hidden = !role;
-  $('#who').textContent = role ? 'All-in-one · Test mode' : 'All-in-one · Tallahassee';
-  if (!TEST_MODE) { $('#testbar').hidden = true; $('#testpill').hidden = true; }
+  const bar = $('#testbar');
+  if (bar) bar.hidden = !TEST_MODE;
   if (role && !Object.values(ROLES).includes(role)) {
     sessionStorage.sccRole = '';
     role = '';
   }
   if (!role) {
     pin = '';
-    A.innerHTML = setupCard() + `<div class="card"><h2>Enter your PIN</h2><div id="dots"></div><div class="pin">${[1, 2, 3, 4, 5, 6, 7, 8, 9, '⌫', 0, '✓'].map((k) => `<button type="button" onclick="key('${k}')">${k}</button>`).join('')}</div></div><p class="muted">Free estimates · Garage floors &amp; commercial coatings · ${esc(CO.phone)}</p>`;
+    A.innerHTML = setupCard() + `<div class="card" style="text-align:center"><img src="logo.png" alt="" style="width:170px;max-width:60%"><h2 style="margin-top:6px">Enter PIN</h2><div id="dots"></div><div class="pin">${[1, 2, 3, 4, 5, 6, 7, 8, 9, '⌫', 0, '✓'].map((k) => `<button type="button" onclick="key('${k}')">${k}</button>`).join('')}</div></div><p class="muted" style="text-align:center">Free estimates · Garage floors and commercial coatings<br>${esc(CO.phone)}</p>`;
     return;
   }
+  if (cur) return jview(cur);
+  if (view === 'cust') return custScreen();
+  if (view === 'books') return bookScreen();
+  if (view === 'set') return setScreen();
   home();
 }
 function key(k) {
@@ -188,7 +194,7 @@ function stat(j) {
   return j.status;
 }
 const SC = { sent: '#3a415c', reply: '#5b4b8a', approved: '#2f6b4f', inprogress: '#b86e00', complete: '#2a3148', invoiced: '#9a3412', paid: '#2f6b4f', declined: '#8a8f98' };
-const ST = { paid: 'Paid', inprogress: 'In progress', sent: 'Quoted', approved: 'Approved · do the job', declined: 'Declined', reply: 'Customer replied', complete: 'Done · invoice it', invoiced: 'Invoiced' };
+const ST = { paid: 'Paid', inprogress: 'In progress', sent: 'Quote sent', approved: 'Approved', declined: 'Declined', reply: 'Customer replied', complete: 'Job done - invoice', invoiced: 'Invoice OPEN' };
 function list(title, arr, go, extra) {
   A.innerHTML = `${setupCard()}${extra || ''}<div class="card"><h2>${title}</h2>${arr.length ? '' : '<p class="muted">Nothing here right now.</p>'}${arr.map((j) => `<button class="btn n" style="text-align:left" onclick="${go}('${j.id}')">${esc(j.name)}<br><small style="font-weight:400">${esc(j.address)} <span class="badge" style="background:${SC[stat(j)] || '#8a8f98'}">${ST[stat(j)] || esc(j.status)}</span>${j.response ? ' · ' + esc(j.response.label) : ''}${av(j) ? '<br>🕒 ' + esc(av(j)) : ''} ${cfBadge(j)}</small></button>`).join('')}<button class="btn gr" onclick="refresh().then(render)">↻ Refresh</button></div>` + (root ? `<p class="muted"><a href="${esc(root)}" target="_blank" rel="noopener">Drive folder</a></p>` : '');
 }
@@ -348,8 +354,69 @@ async function delBlk(id) {
   catch (e) { toast(e.message); }
 }
 
+function sect(j) {
+  const s = j.status;
+  if (s === 'sent' || s === 'reply') return 'est';
+  if (s === 'declined') return 'done';
+  if (s === 'invoiced' && j.invoice && j.invoice.paid) return 'done';
+  return 'jobs';
+}
+const SECT = { est: 'Estimates', jobs: 'Jobs', done: 'Done' };
+const SEMPTY = {
+  est: 'No open estimates. Tap + New quote to start one.',
+  jobs: 'No jobs right now. Approved estimates show up here automatically.',
+  done: 'Nothing filed yet. Paid jobs land here.'
+};
+let G = { est: [], jobs: [], done: [] };
+const nq = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+function hit(j, q) {
+  const l = q.trim().toLowerCase(), n = nq(q);
+  if (!l) return true;
+  return String(j.name || '').toLowerCase().includes(l) || String(j.address || '').toLowerCase().includes(l) || (n && (nq(j.est).includes(n) || nq(j.name).includes(n) || nq(j.address).includes(n)));
+}
+function hl() {
+  const q = SQ.trim(), el = $('#hl');
+  if (!el) return;
+  let arr, note = '';
+  if (q) {
+    arr = jobs.filter((j) => hit(j, q)).sort((a, b) => ((b.created || '') < (a.created || '') ? -1 : 1));
+    note = `<p class="muted" style="margin:0 0 8px">${arr.length} result${arr.length === 1 ? '' : 's'} for "${esc(q)}" across Estimates, Jobs and Done</p>`;
+  } else {
+    arr = G[tab] || [];
+    const due = G.jobs.filter((j) => j.status === 'complete').length;
+    note = (tab === 'jobs' && due ? `<p class="muted" style="margin:0 0 8px;color:#9a3412"><b>${due} job${due > 1 ? 's' : ''} finished, ready to invoice</b></p>` : '') + (tab === 'done' ? '<p class="muted" style="margin:0 0 8px">Filed away. Tap any one to view it.</p>' : '');
+  }
+  el.innerHTML = note + (arr.length ? '' : `<p class="muted" style="text-align:center;padding:20px">${q ? 'No matches. Try a name, address or estimate number.' : SEMPTY[tab]}</p>`) + arr.map((j) => `<button class="job" ${sect(j) === 'done' ? 'style="opacity:.85"' : ''} onclick="jview('${j.id}')"><span class="t">${j.total != null ? SCCQuote.money(j.total) : ''}</span><b>${esc(j.name)}</b><div class="a">${esc(j.address)}${j.est ? ' · ' + esc(j.est) : ''}</div><span class="badge" style="background:${SC[stat(j)] || '#8a8f98'}">${ST[stat(j)] || esc(j.status)}</span>${q ? ` <span class="muted">${SECT[sect(j)]}</span>` : ''}${j.response && j.status === 'reply' ? ' <span class="muted">' + esc(j.response.text || '').slice(0, 40) + '</span>' : ''}</button>`).join('');
+}
 function home() {
-  list('All my projects (' + jobs.length + ')', [...jobs].sort((a, b) => (a.created < b.created ? 1 : -1)), 'jview', `<button class="btn huge" onclick="newq()">+ New customer quote</button><button class="btn huge n" onclick="sched()">Crew schedule</button>`);
+  cur = null;
+  view = '';
+  CK = '';
+  G = { est: [], jobs: [], done: [] };
+  jobs.forEach((j) => G[sect(j)].push(j));
+  const ts = (j) => j.created || '';
+  G.est.sort((a, b) => (ts(b) < ts(a) ? -1 : 1));
+  G.done.sort((a, b) => (ts(b) < ts(a) ? -1 : 1));
+  G.jobs.sort((a, b) => {
+    const r = (j) => (j.status === 'complete' ? 0 : j.status === 'approved' ? 1 : 2);
+    return r(a) - r(b) || (ts(b) < ts(a) ? -1 : 1);
+  });
+  if (!G[tab]) tab = 'est';
+  A.innerHTML = `<button class="btn huge" type="button" onclick="newq()">+ New quote</button>
+<div class="row"><button class="btn n nav" type="button" onclick="go('cust')">👥 Customers</button><button class="btn n nav" type="button" onclick="go('books')">📒 Bookkeeping</button></div>
+<input id="find" type="search" placeholder="Search name, address or estimate #" value="${esc(SQ)}" autocomplete="off" oninput="SQ=this.value;hl()" style="margin-top:12px;font-size:16px">
+<div class="tabs" style="margin-top:12px">${['est', 'jobs', 'done'].map((k) => `<button type="button" class="${tab === k && !SQ.trim() ? 'on' : ''}" onclick="tab='${k}';SQ='';home()">${SECT[k]}<span class="cnt">${G[k].length}</span></button>`).join('')}</div>
+<div id="hl"></div>
+<div class="row"><button class="btn gr" type="button" onclick="refresh().then(render)">↻ Refresh</button><button class="btn gr" type="button" onclick="go('set')">⚙️ Settings</button></div>`;
+  hl();
+}
+function homeBtn() { RC = null; view = ''; CK = ''; render(); window.scrollTo(0, 0); }
+function go(v) {
+  RC = null; view = v; cur = null; PAYING = '';
+  if (v !== 'cust') CK = '';
+  try { api({ a: 'log', what: 'opened ' + ({ cust: 'Customers', books: 'Bookkeeping', set: 'Settings' }[v] || v), role: role, ua: '' }).catch(function () {}); } catch (e) {}
+  render();
+  window.scrollTo(0, 0);
 }
 
 const STATES = { alabama: 'AL', alaska: 'AK', arizona: 'AZ', arkansas: 'AR', california: 'CA', colorado: 'CO', connecticut: 'CT', delaware: 'DE', florida: 'FL', georgia: 'GA', hawaii: 'HI', idaho: 'ID', illinois: 'IL', indiana: 'IN', iowa: 'IA', kansas: 'KS', kentucky: 'KY', louisiana: 'LA', maine: 'ME', maryland: 'MD', massachusetts: 'MA', michigan: 'MI', minnesota: 'MN', mississippi: 'MS', missouri: 'MO', montana: 'MT', nebraska: 'NE', nevada: 'NV', 'new hampshire': 'NH', 'new jersey': 'NJ', 'new mexico': 'NM', 'new york': 'NY', 'north carolina': 'NC', 'north dakota': 'ND', ohio: 'OH', oklahoma: 'OK', oregon: 'OR', pennsylvania: 'PA', 'rhode island': 'RI', 'south carolina': 'SC', 'south dakota': 'SD', tennessee: 'TN', texas: 'TX', utah: 'UT', vermont: 'VT', virginia: 'VA', washington: 'WA', 'west virginia': 'WV', wisconsin: 'WI', wyoming: 'WY', 'district of columbia': 'DC' };
@@ -446,11 +513,13 @@ function livePrice() {
   if (sq > 0 && rate > 0) el.textContent = SCCQuote.formatSq(sq) + ' sq ft × ' + SCCQuote.money(rate) + ' = ' + SCCQuote.money(SCCQuote.round2(sq * rate));
   else el.textContent = 'Enter square footage and a price per sq ft.';
 }
-function newq() {
+function newq(pre) {
   photos = [];
   ACC = {};
+  cur = null;
+  if (pre && typeof pre === 'object') ACC.qc = true;
   A.innerHTML = `<div class="card"><h2>New quote</h2>
-${acc('qc', 'Customer details', 'Tap to enter name, address, email', `<label>Customer name</label><input id="nm" autocomplete="name" oninput="cs()"><label>Address</label><div style="position:relative"><input id="ad" autocomplete="off" autocapitalize="words" placeholder="Start typing the Tallahassee address" oninput="cs()"><div class="sug" id="adsug" hidden></div></div><label>Customer email</label><input id="em" type="email" inputmode="email" autocomplete="off" placeholder="Saved on the job" oninput="cs()"><p class="muted">Test mode is on. This address is stored on the job. The estimate email goes only to ${esc(TEST_TO)}.</p>`)}
+${acc('qc', 'Customer details', 'Tap to enter name, address, email', `<label>Customer name</label><input id="nm" autocomplete="name" oninput="cs()"><label>Address</label><div style="position:relative"><input id="ad" autocomplete="off" autocapitalize="words" placeholder="Start typing the Tallahassee address" oninput="cs()"><div class="sug" id="adsug" hidden></div></div><label>Customer email</label><input id="em" type="email" inputmode="email" autocomplete="off" placeholder="Saved on the job" oninput="cs()"><label>Customer phone (optional)</label><input id="ph" type="tel" inputmode="tel" autocomplete="off" placeholder="For call and text from Customers" oninput="cs()">${TEST_MODE ? `<p class="muted">Test mode is on. This address is stored on the job. The estimate email goes only to ${esc(TEST_TO)}.</p>` : '<p class="muted">This email is where the estimate is sent.</p>'}`)}
 <label>Square footage</label><input id="sqft" inputmode="decimal" placeholder="480" oninput="livePrice()">
 <label>Coating system</label><select id="system" onchange="livePrice()"><option value="">Choose a system</option>${SYSTEMS.map((s) => `<option>${esc(s)}</option>`).join('')}</select>
 <label>Color / flake</label><input id="color" placeholder="Dominion, Wolf Gray, custom blend">
@@ -468,6 +537,14 @@ ${acc('qp', 'Photo attachments (0)', 'No photos yet', '<div id="pp"></div>')}
   mic('mb', 'qt');
   addrAC('ad', cs);
   livePrice();
+  if (pre && typeof pre === 'object') {
+    $('#nm').value = pre.name || '';
+    $('#ad').value = pre.address || '';
+    $('#em').value = pre.email || '';
+    if ($('#ph')) $('#ph').value = pre.phone || '';
+    cs();
+    $('#qt').focus();
+  }
 }
 function cs() {
   const n = $('#nm') && $('#nm').value.trim();
@@ -512,7 +589,7 @@ ${IT.map((i, n) => `<div style="border-bottom:1px solid #e6e8ee;padding:8px 0"><
 async function sendQ() {
   const f = fieldVals();
   const d = {
-    a: 'create', name: $('#nm').value.trim(), address: $('#ad').value.trim(), email: $('#em').value.trim(),
+    a: 'create', name: $('#nm').value.trim(), address: $('#ad').value.trim(), email: $('#em').value.trim(), phone: ($('#ph') ? $('#ph').value.trim() : ''),
     quote: $('#qt').value, sqft: f.sqft, system: f.system, color: f.color, prep: f.prep, cure: f.cure, rate: f.rate,
     items: IT.filter((i) => i.title && i.title.trim()), photos
   };
@@ -566,7 +643,7 @@ function jview(id) {
   GAL = [];
   cur = id;
   const j = jobs.find((x) => x.id === id);
-  if (!j) return render();
+  if (!j) { cur = null; return render(); }
   const st = j.status;
   const v = j.invoice || {};
   const paid = !!v.paid;
@@ -581,14 +658,14 @@ function jview(id) {
 ${specLine ? '<p style="font-size:18px">' + esc(specLine) + '</p>' : ''}
 <p><span class="badge" style="background:${SC[stat(j)] || '#8a8f98'}">${ST[stat(j)] || esc(j.status)}</span> ${cfBadge(j)}${j.invoice ? ` <span class="badge ${paid ? 'paid' : 'open'}">${paid ? 'PAID' : 'OPEN'}</span>` : ''}</p>
 ${av(j) ? '<p style="font-size:17px">🕒 <b>Customer prefers:</b> ' + esc(av(j)) + '</p>' : ''}
-<p class="muted">Test mode: emails go only to ${esc(TEST_TO)}</p></div>`;
-  h += acc(K('jd'), 'Job details', (j.est || 'Quote') + ' · ' + (j.email || 'no email'), `${j.est ? '<p class="muted">' + esc(j.est) + (j.pdf ? ` · <a href="${esc(j.pdf)}" target="_blank" rel="noopener">PDF</a>` : '') + '</p>' : ''}<p>📧 ${esc(j.email) || '<b style="color:#b91c1c">No email on job</b>'} <a href="#" onclick="fixEmail('${id}');return false">edit</a></p>${j.response ? '<p><b>Customer answer:</b> ' + esc(j.response.label) + (j.response.text ? ' — ' + esc(j.response.text) : '') + '</p>' : ''}${av(j) ? '<p><b>Availability:</b> ' + esc(av(j)) + '</p>' : ''}${specHtml(j)}${j.notes ? '<p>' + esc(j.notes) + '</p>' : ''}${j.crewNotes ? '<p><b>Job notes:</b> ' + esc(j.crewNotes) + '</p>' : ''}${j.folder ? `<p><a href="${esc(j.folder)}" target="_blank" rel="noopener">Project photos in Drive</a></p>` : ''}`);
+${TEST_MODE ? `<p class="muted">Test mode: emails go only to ${esc(TEST_TO)}</p>` : ''}</div>`;
+  h += acc(K('jd'), 'Job details', (j.est || 'Quote') + ' · ' + (j.email || 'no email'), `${j.est ? '<p class="muted">' + esc(j.est) + (j.pdf ? ` · <a href="${esc(j.pdf)}" target="_blank" rel="noopener">PDF</a>` : '') + '</p>' : ''}<p>📧 ${esc(j.email) || '<b style="color:#b91c1c">No email on job</b>'} <a href="#" onclick="fixEmail('${id}');return false">edit</a></p><p>📞 ${j.phone ? `<a href="tel:${telH(j.phone)}">${esc(fmtPh(j.phone))}</a>` : 'No phone'} <a href="#" onclick="editPhone(['${id}']);return false">${j.phone ? 'edit' : 'add'}</a></p>${j.response ? '<p><b>Customer answer:</b> ' + esc(j.response.label) + (j.response.text ? ' — ' + esc(j.response.text) : '') + '</p>' : ''}${av(j) ? '<p><b>Availability:</b> ' + esc(av(j)) + '</p>' : ''}${specHtml(j)}${j.notes ? '<p>' + esc(j.notes) + '</p>' : ''}${j.crewNotes ? '<p><b>Job notes:</b> ' + esc(j.crewNotes) + '</p>' : ''}${j.folder ? `<p><a href="${esc(j.folder)}" target="_blank" rel="noopener">Project photos in Drive</a></p>` : ''}`);
   h += acc(K('li'), 'Line items (' + li + ')', tot ? tot + ' total' : 'Scope and price', items(j));
   if (np && st !== 'approved') h += acc(K('ph'), 'Photos (' + np + ')', 'Quote ' + (j.photos || []).length + ' · Before/After ' + (j.crew || []).length, ((j.photos || []).length ? '<label>Quote photos</label>' + imgs(j.photos) : '') + ((j.crew || []).length ? '<label>Before / After</label>' + imgs(j.crew) : ''));
   if (st === 'approved' && (j.photos || []).length) h += acc(K('qp'), 'Quote photos (' + j.photos.length + ')', 'Tap to view', imgs(j.photos));
   if (st === 'sent' || st === 'reply' || st === 'approved') h += cfDetail(j);
   if (st === 'sent' || st === 'reply' || st === 'declined') {
-    h += `<div class="card"><h2>Step 1 · Quote</h2><p class="muted">Waiting on the customer. Answered by phone? Mark it:</p><div class="row"><button class="btn" type="button" onclick="ans('${id}','A')">A Approve</button><button class="btn d" type="button" onclick="ans('${id}','B')">B Changes</button><button class="btn gr" type="button" onclick="ans('${id}','C')">C Decline</button></div>${resendBtn(j, true)}</div>`;
+    h += `<div class="card"><h2>Step 1 · Quote</h2><p class="muted">Waiting on the customer. Answered by phone? Mark it:</p><div class="row"><button class="btn" type="button" onclick="ans('${id}','A')">A Approve</button><button class="btn d" type="button" onclick="ans('${id}','B')">B Changes</button><button class="btn gr" type="button" onclick="ans('${id}','C')">C Decline</button></div>${resendBtn(j, true)}<button class="btn gr" id="del" type="button" onclick="delQ('${id}')">Delete this estimate</button></div>`;
   }
   if (st === 'approved') {
     h += `<div class="card"><h2>Step 2 · Do the job</h2>${acc(K('bf'), 'Before photos (' + b.length + ')', b.length ? 'Tap to view' : 'None yet', imgs(b))}<input type="file" id="bf" accept="image/*" capture="environment" multiple hidden onchange="up(this,'before')"><button class="btn d" type="button" onclick="$('#bf').click()">📷 Before photo</button>
@@ -598,16 +675,16 @@ ${acc(K('jn'), 'Job notes', j.crewNotes ? esc(String(j.crewNotes).slice(0, 60)) 
   }
   if (st === 'complete' || st === 'invoiced') {
     const am = v.amount || (j.total != null ? SCCQuote.money(j.total) : '');
-    h += `<div class="card"><h2>Step 3 · Invoice</h2><p class="muted">Prefilled from the quote. Test mode sends this only to ${esc(TEST_TO)}.</p>${acc(K('pd'), 'Payment details', 'Amount ' + am + ' · ' + (paid ? 'PAID' : st === 'invoiced' ? 'OPEN' : 'not sent'), `<label>Amount</label><input id="am" value="${esc(am)}"><label>Note</label><textarea id="an" rows="2">${esc(v.note || 'Payment due within 15 days. Thank you for the floor.')}</textarea>`)}
-<button class="btn huge" id="invbtn" type="button" onclick="inv('${id}')">${j.invoice ? 'Resend invoice' : 'Send invoice'}</button>${st === 'invoiced' ? `<button class="btn ${paid ? 'gr' : 'd'}" id="paidbtn" type="button" onclick="markPaid('${id}',${!paid})">${paid ? 'Mark OPEN' : 'Mark PAID'}</button>` : ''}</div>`;
+    h += `<div class="card"><h2>Step 3 · Invoice</h2><p class="muted">Prefilled from the quote.${TEST_MODE ? ' Test mode sends this only to ' + esc(TEST_TO) + '.' : ''}</p>${acc(K('pd'), 'Payment details', 'Amount ' + am + ' · ' + (paid ? 'PAID' : st === 'invoiced' ? 'OPEN' : 'not sent'), `<label>Amount</label><input id="am" value="${esc(am)}"><label>Note</label><textarea id="an" rows="2">${esc(v.note || 'Payment due within 15 days. Thank you for the floor.')}</textarea>`)}
+<button class="btn huge" id="invbtn" type="button" onclick="inv('${id}')">${j.invoice ? 'Resend invoice' : 'Send invoice'}</button>${payUI(j)}</div>${revCard(j)}`;
   }
   if ((st === 'approved' || st === 'complete' || st === 'invoiced') && j.est) h += `<div class="card">${resendBtn(j, false)}</div>`;
-  h += '<button class="btn gr" type="button" onclick="render()">← All projects</button>';
+  h += `<button class="btn gr" type="button" onclick="cur=null;render()">${view === 'cust' ? '← Back to customer' : '← All projects'}</button>`;
   A.innerHTML = h;
   if (st === 'approved') mic('cm', 'cn');
 }
 async function resend(id) {
-  if (!confirm('Resend the quote email? Test mode sends it only to ' + TEST_TO + '.')) return;
+  if (!confirm(TEST_MODE ? 'Resend the quote email? Test mode sends it only to ' + TEST_TO + '.' : 'Resend the quote email to the customer?')) return;
   const b = $('#rs');
   if (b) { b.disabled = true; b.textContent = 'Sending…'; }
   try { await api({ a: 'resend', id }); toast(sentMsg('Estimate')); }
@@ -627,6 +704,377 @@ async function inv(id) {
 async function markPaid(id, p) {
   try { await api({ a: 'paid', id, paid: p }); await refresh(); jview(id); }
   catch (e) { toast(e.message); }
+}
+let delT = null;
+async function delQ(id) {
+  const b = $('#del');
+  if (!b) return;
+  if (!b.classList.contains('red')) {
+    b.classList.add('red');
+    b.textContent = 'Tap again to delete';
+    clearTimeout(delT);
+    delT = setTimeout(() => { if (b.isConnected) { b.classList.remove('red'); b.textContent = 'Delete this estimate'; } }, 4000);
+    return;
+  }
+  clearTimeout(delT);
+  b.disabled = true;
+  b.textContent = 'Deleting…';
+  const j = jobs.find((x) => x.id === id);
+  try {
+    await api({ a: 'delete', id, pin: ownerPin() });
+    cur = null;
+    tab = j && sect(j) === 'done' ? 'done' : 'est';
+    await refresh();
+    toast('Estimate deleted');
+    render();
+  } catch (e) {
+    toast(e.message);
+    b.disabled = false;
+    b.classList.remove('red');
+    b.textContent = 'Delete this estimate';
+  }
+}
+
+const EXC = ['Fuel', 'Equipment repair', 'Equipment rental', 'Tools & equipment', 'Parts & supplies', 'Meals', 'Subcontractors', 'Labor', 'Insurance', 'Dump fees', 'Vehicle', 'Advertising', 'Office', 'Other'];
+const PAYL = { check: 'Check', cash: 'Cash', card: 'Card', other: 'Other' };
+const RQK = 'scc_rq1';
+const amtN = (a) => { const n = parseFloat(String(a == null ? '' : a).replace(/[^0-9.\-]/g, '')); return isNaN(n) ? 0 : n; };
+const m0 = (v) => ((v || 0) < 0 ? '-' + SCCQuote.money(-v) : SCCQuote.money(v || 0));
+const etD = (i) => { try { return i ? new Date(i).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }) : ''; } catch (e) { return ''; } };
+const todayET = () => etD(new Date().toISOString());
+const MN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const monLbl = (ym) => { const p = String(ym).split('-'); return (MN[+p[1] - 1] || p[1]) + ' ' + p[0]; };
+const usD = (d) => { const p = String(d || '').split('-'); return p.length === 3 ? p[1] + '/' + p[2] + '/' + p[0] : String(d || ''); };
+const longD = (d) => { const p = String(d || '').split('-'); return p.length === 3 ? MN[+p[1] - 1] + ' ' + (+p[2]) + ', ' + p[0] : String(d || ''); };
+const digits = (s) => String(s || '').replace(/\D/g, '');
+const telH = (p) => { const d = digits(p); return d.length === 10 ? '+1' + d : (d.length === 11 && d[0] === '1' ? '+' + d : d); };
+const fmtPh = (p) => { const d = digits(p), t = d.length === 11 && d[0] === '1' ? d.slice(1) : d; return t.length === 10 ? '(' + t.slice(0, 3) + ') ' + t.slice(3, 6) + '-' + t.slice(6) : String(p || ''); };
+const invNo = (j) => String(j.est || j.id).replace('EST', 'INV');
+const payDate = (j) => { const v = j.invoice || {}; return v.paidDate || etD(v.paidAt) || etD(v.at); };
+const paidAmt = (j) => { const v = j.invoice || {}; return v.amountPaid != null && v.amountPaid !== '' ? Number(v.amountPaid) : amtN(v.amount); };
+const ownerPin = () => Object.keys(ROLES).find((k) => ROLES[k] === 'Owner') || '';
+
+function payUI(j) {
+  const id = j.id, v = j.invoice || {}, paid = !!v.paid;
+  if (j.status !== 'invoiced' && j.status !== 'complete') return '';
+  if (paid) return `<div style="background:#eef0f8;border-radius:12px;padding:12px;margin-top:12px"><b>Paid ${m0(paidAmt(j))}</b><br><span class="muted">${esc(PAYL[v.method] || 'Payment')} · ${esc(longD(payDate(j)))}${v.ref ? ' · ' + esc(v.ref) : ''}</span></div><button class="btn gr sm" type="button" onclick="markPaid('${id}',false)">Undo payment (mark OPEN)</button>`;
+  if (PAYING === id) return `<div style="border-top:1px solid #e3e6ee;margin-top:16px;padding-top:6px"><h3>Record payment</h3>
+<div class="tabs" id="pm">${Object.keys(PAYL).map((m) => `<button type="button" data-m="${m}" class="${PAYM === m ? 'on' : ''}" onclick="PAYM='${m}';document.querySelectorAll('#pm button').forEach(b=>b.classList.toggle('on',b.dataset.m==PAYM))">${PAYL[m]}</button>`).join('')}</div>
+<label>Amount received</label><input id="pa" inputmode="decimal" value="${esc(v.amount || (j.total != null ? SCCQuote.money(j.total) : ''))}"><label>Date received</label><input id="pd" type="date" value="${todayET()}"><label>Check # or note (optional)</label><input id="pr" autocomplete="off">
+<button class="btn huge" id="ps" type="button" onclick="recPay('${id}')">Save payment</button><button class="btn gr" type="button" onclick="PAYING='';jview('${id}')">Cancel</button></div>`;
+  return `<button class="btn d" type="button" onclick="PAYING='${id}';jview('${id}')">${j.invoice ? 'Record payment' : 'Customer already paid? Record payment'}</button>`;
+}
+async function recPay(id) {
+  const b = $('#ps');
+  b.disabled = true;
+  b.textContent = 'Saving…';
+  try {
+    await api({ a: 'markpaid', id, method: PAYM, date: $('#pd').value, amount: $('#pa').value, ref: $('#pr').value.trim() });
+    PAYING = '';
+    await refresh();
+    jview(id);
+  } catch (e) { toast(e.message); b.disabled = false; b.textContent = 'Save payment'; }
+}
+function revCard(j) {
+  const paid = j.status === 'invoiced' && j.invoice && j.invoice.paid;
+  if (!(j.status === 'complete' || paid)) return '';
+  const r = j.review;
+  if (!SET.reviewLink) return `<div class="card"><h2>Reviews</h2><p class="muted">Add your Google review link in Settings, then you can ask customers for a review with one tap.</p><button class="btn gr" type="button" onclick="go('set')">Open Settings</button></div>`;
+  return `<div class="card"><h2>Reviews</h2><p class="muted" style="margin:0">Emails ${esc(j.email) || 'the customer'} a short thank-you with a button to your Google review page.${r ? ` Last asked ${esc(longD(etD(r.at)))}${r.count > 1 ? ' (' + r.count + ' times)' : ''}.` : ''}</p><button class="btn n" id="rv" type="button" onclick="askRev('${j.id}')">${r ? 'Ask again' : 'Request review'}</button></div>`;
+}
+async function askRev(id) {
+  const j = jobs.find((x) => x.id === id);
+  if (!j || !confirm('Email a review request to ' + (j.email || 'the customer') + '?')) return;
+  const b = $('#rv');
+  b.disabled = true;
+  b.textContent = 'Sending…';
+  try { await api({ a: 'reqreview', id }); await refresh(); jview(id); toast(sentMsg('Review request')); }
+  catch (e) { toast(e.message); b.disabled = false; b.textContent = 'Request review'; }
+}
+async function editPhone(ids) {
+  const j = jobs.find((x) => x.id === ids[0]);
+  const p = prompt('Customer phone', (j && j.phone) || '');
+  if (p == null) return;
+  try { await api({ a: 'phone', ids, phone: p }); await refresh(); render(); }
+  catch (e) { toast(e.message); }
+}
+function custs() {
+  const m = {};
+  jobs.forEach((j) => {
+    const em = String(j.email || '').trim().toLowerCase();
+    const k = SCCQuote.validEmail(em) ? 'e:' + em : 'n:' + nq(j.name) + '|' + nq(j.address);
+    (m[k] = m[k] || { k, jobs: [] }).jobs.push(j);
+  });
+  return Object.values(m).map((c) => {
+    c.jobs.sort((a, b) => ((b.created || '') < (a.created || '') ? -1 : 1));
+    const l = c.jobs[0];
+    c.name = l.name || '(no name)';
+    c.email = (c.jobs.find((j) => SCCQuote.validEmail(j.email)) || {}).email || '';
+    c.phone = (c.jobs.find((j) => j.phone) || {}).phone || '';
+    c.addrs = [...new Set(c.jobs.map((j) => j.address).filter(Boolean))];
+    c.n = c.jobs.length;
+    c.quoted = c.jobs.reduce((a, j) => a + (j.status === 'declined' ? 0 : amtN(j.total)), 0);
+    const iv = c.jobs.filter((j) => j.invoice);
+    c.billed = iv.reduce((a, j) => a + amtN(j.invoice.amount), 0);
+    c.paid = iv.filter((j) => j.invoice.paid).reduce((a, j) => a + paidAmt(j), 0);
+    c.owed = iv.filter((j) => !j.invoice.paid).reduce((a, j) => a + amtN(j.invoice.amount), 0);
+    return c;
+  }).sort((a, b) => (a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1));
+}
+function custScreen() {
+  const cs = custs();
+  if (CK) { const c = cs.find((x) => x.k === CK); if (c) return custDetail(c); CK = ''; }
+  A.innerHTML = `<button class="btn gr" type="button" style="margin:0 0 12px" onclick="homeBtn()">← Home</button><div class="card"><h2 style="margin-bottom:8px">Customers <span class="muted">(${cs.length})</span></h2>
+<input id="cq" type="search" placeholder="Search name, phone, email or address" value="${esc(CQ)}" autocomplete="off" oninput="CQ=this.value;custList()" style="font-size:16px"></div><div id="cl"></div>`;
+  custList();
+}
+function custList() {
+  const el = $('#cl');
+  if (!el) return;
+  const q = CQ.trim().toLowerCase(), qd = digits(CQ);
+  CL = custs().filter((c) => !q || c.name.toLowerCase().includes(q) || (c.email || '').toLowerCase().includes(q) || c.addrs.some((a) => a.toLowerCase().includes(q)) || (qd.length >= 3 && digits(c.phone).includes(qd)));
+  el.innerHTML = (CL.length ? '' : `<p class="muted" style="text-align:center;padding:20px">${q ? 'No matches. Try a name, phone number, email or address.' : 'No customers yet. They appear here automatically when you send a quote.'}</p>`) +
+    CL.map((c, i) => `<button class="job" type="button" onclick="openC(${i})"><span class="t">${c.billed ? m0(c.billed) : ''}</span><b>${esc(c.name)}</b><div class="a">${esc([c.phone ? fmtPh(c.phone) : '', c.email].filter(Boolean).join(' · ') || c.addrs[0] || '')}</div><span class="badge" style="background:#3a415c">${c.n} job${c.n === 1 ? '' : 's'}</span>${c.owed > 0 ? ` <span class="badge" style="background:#9a3412">Owes ${m0(c.owed)}</span>` : ''}</button>`).join('');
+}
+function openC(i) { CK = CL[i].k; render(); window.scrollTo(0, 0); }
+function custDetail(c) {
+  const t = telH(c.phone);
+  A.innerHTML = `<button class="btn gr" type="button" style="margin:0 0 12px" onclick="CK='';render()">← All customers</button>
+<div class="card"><h2 style="margin-bottom:6px">${esc(c.name)}</h2>
+${c.addrs.map((a) => `<p style="margin:0 0 6px;font-size:16px">📍 <a href="https://maps.google.com/?q=${encodeURIComponent(a)}" target="_blank" rel="noopener">${esc(a)}</a></p>`).join('')}
+<p class="muted" style="margin:6px 0 0">📧 ${esc(c.email) || '<b style="color:#b42318">No email</b>'}</p>
+<p class="muted" style="margin:6px 0 0">📞 ${c.phone ? esc(fmtPh(c.phone)) : 'No phone yet'} <a href="#" onclick="editPhone(CK_ids());return false">${c.phone ? 'edit' : 'add'}</a></p>
+<div class="row">${c.phone ? `<a class="btn d sm" href="tel:${t}">Call</a><a class="btn d sm" href="sms:${t}">Text</a>` : ''}${c.email ? `<a class="btn d sm" href="mailto:${esc(c.email)}">Email</a>` : ''}</div></div>
+<button class="btn huge" type="button" onclick="newqFor()">+ New quote for ${esc(c.name.split(' ')[0])}</button>
+<div class="card" style="margin-top:12px"><h2>Totals</h2><div class="kv"><span>Quoted</span><b>${m0(c.quoted)}</b></div><div class="kv"><span>Invoiced</span><b>${m0(c.billed)}</b></div><div class="kv"><span>Paid</span><b style="color:#2f6b4f">${m0(c.paid)}</b></div><div class="kv"><span>Still owed</span><b style="color:${c.owed > 0 ? '#9a3412' : 'inherit'}">${m0(c.owed)}</b></div></div>
+<div class="card"><h2>Job history (${c.n})</h2>${c.jobs.map((j) => `<button class="job" type="button" onclick="jview('${j.id}')"><span class="t">${j.total != null ? SCCQuote.money(j.total) : ''}</span><b>${esc(j.address)}</b><div class="a">${j.est ? esc(j.est) + ' · ' : ''}${esc(longD(etD(j.created)))}</div><span class="badge" style="background:${SC[stat(j)] || '#8a8f98'}">${ST[stat(j)] || esc(j.status)}</span></button>`).join('')}</div>`;
+}
+function CK_ids() { const c = custs().find((x) => x.k === CK); return c ? c.jobs.map((j) => j.id) : []; }
+function newqFor() {
+  const c = custs().find((x) => x.k === CK);
+  if (!c) return;
+  newq({ name: c.name, address: c.jobs[0].address, email: c.email, phone: c.phone });
+}
+function bookStats() {
+  const cm = todayET().slice(0, 7), cy = todayET().slice(0, 4), mo = {}, g = (ym) => mo[ym] = mo[ym] || { inv: 0, paid: 0, unp: 0, exp: 0 };
+  let out = 0, outN = 0, colM = 0, colY = 0, expM = 0, expY = 0;
+  const open = [];
+  jobs.forEach((j) => {
+    if (!j.invoice) return;
+    const v = j.invoice, a = amtN(v.amount), r = g((etD(v.at) || todayET()).slice(0, 7));
+    r.inv += a;
+    if (v.paid) { r.paid += a; const pd = payDate(j), pa = paidAmt(j); if (pd.slice(0, 7) === cm) colM += pa; if (pd.slice(0, 4) === cy) colY += pa; }
+    else { r.unp += a; out += a; outN++; open.push(j); }
+  });
+  EXP.forEach((e) => { const a = Number(e.amount) || 0, d = String(e.date); g(d.slice(0, 7)).exp += a; if (d.slice(0, 7) === cm) expM += a; if (d.slice(0, 4) === cy) expY += a; });
+  open.sort((a, b) => ((a.invoice.at || '') < (b.invoice.at || '') ? -1 : 1));
+  return { mo, out, outN, colM, colY, expM, expY, open, cm };
+}
+function bookScreen() {
+  if (RC) return rcScreen();
+  if (!EXPL && !EXPLOAD) {
+    EXPLOAD = true;
+    api({ a: 'explist', pin: ownerPin() }).then((r) => { EXP = r.expenses || []; EXPL = true; EXPLOAD = false; if (view === 'books' && !cur && !RC) bookScreen(); }).catch((e) => { EXPLOAD = false; toast(e.message); });
+  }
+  const S = bookStats();
+  const ms = Object.keys(S.mo).sort().reverse().slice(0, 12);
+  const yrs = [...new Set([...jobs.filter((j) => j.invoice).map((j) => (etD(j.invoice.at) || '').slice(0, 4)), ...EXP.map((e) => String(e.date).slice(0, 4)), todayET().slice(0, 4)].filter(Boolean))].sort().reverse();
+  const rec = [...EXP].sort((a, b) => (String(b.date) < String(a.date) ? -1 : (String(b.date) > String(a.date) ? 1 : ((b.created || '') < (a.created || '') ? -1 : 1)))).slice(0, 15);
+  const now = Date.now();
+  A.innerHTML = `<button class="btn gr" type="button" style="margin:0 0 12px" onclick="homeBtn()">← Home</button>
+<input type="file" id="rf" accept="image/*" capture="environment" hidden onchange="scanR(this)"><button class="btn huge" type="button" style="margin:0 0 6px" onclick="$('#rf').click()">Scan receipt</button>
+<p class="muted" style="text-align:center;margin:0 0 16px">${SET.ocr ? 'Snap a receipt and the amounts will be read for you.' : 'Snap a receipt and save it with the expense. Automatic reading is not turned on yet.'}</p>
+<div class="card"><h2>Bookkeeping</h2><div class="kv"><span>Collected in ${esc(monLbl(S.cm))}</span><b style="color:#2f6b4f">${m0(S.colM)}</b></div><div class="kv"><span>Collected this year</span><b>${m0(S.colY)}</b></div>
+<div class="kv"><span>Unpaid invoices (${S.outN})</span><b style="color:${S.out > 0 ? '#9a3412' : 'inherit'}">${m0(S.out)}</b></div><div class="kv"><span>Expenses this month</span><b>${m0(S.expM)}</b></div><div class="kv"><span>Expenses this year</span><b>${m0(S.expY)}</b></div>
+<div class="kv"><span>Profit this month (collected − expenses)</span><b>${m0(S.colM - S.expM)}</b></div></div>
+<div class="card"><h2>Outstanding invoices</h2>${S.open.length ? S.open.map((j) => { const days = Math.max(0, Math.floor((now - new Date(j.invoice.at).getTime()) / 864e5)); return `<button class="job" type="button" onclick="jview('${j.id}')"><span class="t" style="color:#9a3412">${esc(j.invoice.amount || '')}</span><b>${esc(j.name)}</b><div class="a">${esc(invNo(j))} · sent ${esc(longD(etD(j.invoice.at)))}</div><span class="badge" style="background:${days > 30 ? '#b42318' : '#9a3412'}">${days} day${days === 1 ? '' : 's'} open</span></button>`; }).join('') : '<p class="muted" style="margin:0">Nothing outstanding.</p>'}</div>
+<div class="card"><h2>By month</h2><p class="muted" style="margin:0 0 6px">Invoiced is by invoice date. Profit = invoiced − expenses.</p>${ms.length ? ms.map((k) => { const r = S.mo[k]; return `<div class="line"><b>${esc(monLbl(k))}</b><b style="float:right;color:${r.inv - r.exp >= 0 ? '#2f6b4f' : '#b42318'}">${m0(r.inv - r.exp)}</b><br><span>Invoiced ${m0(r.inv)} (Paid ${m0(r.paid)} · Unpaid ${m0(r.unp)}) · Expenses ${m0(r.exp)}</span></div>`; }).join('') : '<p class="muted" style="margin:0">Nothing yet. Invoices and expenses show up here.</p>'}</div>
+<div class="card"><h2>Add an expense</h2><label>Amount</label><input id="xa" inputmode="decimal" placeholder="$0.00" autocomplete="off"><label>Category</label><select id="xc">${EXC.map((c) => `<option>${esc(c)}</option>`).join('')}</select>
+<label>Note (optional)</label><input id="xn" autocomplete="off" placeholder="What was it for?"><label>Date</label><input id="xd" type="date" value="${todayET()}"><button class="btn huge" id="xs" type="button" onclick="addExp()">Save expense</button></div>
+<div class="card"><h2>Recent expenses</h2>${!EXPL ? '<p class="muted" style="margin:0">Loading…</p>' : rec.length ? rec.map((e) => `<div class="line" style="display:flex;gap:12px;align-items:flex-start"><div style="flex:1;min-width:0"><b>${SCCQuote.money(Number(e.amount))}</b> <b style="color:#5c6370;font-weight:600">${esc(e.vendor || e.category)}</b><span style="float:right">${esc(usD(e.date))}</span>${(e.vendor ? e.category + (e.note ? ' · ' + e.note : '') : e.note) ? '<br><span>' + esc(e.vendor ? e.category + (e.note ? ' · ' + e.note : '') : e.note) + '</span>' : ''}${e.tax != null ? '<br><span>Tax ' + SCCQuote.money(Number(e.tax)) + '</span>' : ''}<br><a href="#" onclick="delExp('${esc(e.id)}');return false">Remove</a></div>${e.receipt ? `<img class="rth" alt="Receipt" src="" data-id="${esc(e.receipt)}" onerror="fb(this)">` : ''}</div>`).join('') : '<p class="muted" style="margin:0">No expenses entered yet.</p>'}</div>
+<div class="card"><h2>Export for QuickBooks</h2><label>Period</label><select id="ey"><option value="all">All time</option>${yrs.map((y) => `<option>${y}</option>`).join('')}</select>
+<button class="btn n" type="button" onclick="exportCsv('qb')">QuickBooks import (Date, Description, Amount)</button><button class="btn gr" type="button" onclick="exportCsv('detail')">Full detail (invoices, payments, expenses)</button>
+<p class="muted" style="margin:10px 0 0">In QuickBooks Online: Transactions, Bank transactions, Upload from file, then pick this CSV. Payments come in as positive amounts and expenses as negative.</p></div>`;
+}
+async function addExp() {
+  const a = $('#xa').value;
+  if (!(amtN(a) > 0)) return toast('Enter the amount');
+  const b = $('#xs');
+  b.disabled = true;
+  b.textContent = 'Saving…';
+  try { const r = await api({ a: 'expadd', pin: ownerPin(), amount: a, category: $('#xc').value, note: $('#xn').value.trim(), date: $('#xd').value }); EXP = r.expenses || []; EXPL = true; toast('Expense saved'); bookScreen(); }
+  catch (e) { toast(e.message); b.disabled = false; b.textContent = 'Save expense'; }
+}
+async function delExp(id) {
+  if (!confirm('Remove this expense?')) return;
+  try { const r = await api({ a: 'expdel', pin: ownerPin(), id }); EXP = r.expenses || []; toast('Removed'); bookScreen(); }
+  catch (e) { toast(e.message); }
+}
+const csvT = (v) => { v = String(v == null ? '' : v); if (/^[=+\-@\t\r]/.test(v)) v = "'" + v; return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+const csvN = (v) => (Math.round((Number(v) || 0) * 100) / 100).toFixed(2);
+async function dlCsv(name, text) {
+  const blob = new Blob([text], { type: 'text/csv' });
+  const u = URL.createObjectURL(blob), a = document.createElement('a');
+  a.href = u; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(u), 5000);
+}
+function exportCsv(kind) {
+  const y = $('#ey').value, inR = (d) => y === 'all' || String(d).slice(0, 4) === y, rows = [];
+  const pays = jobs.filter((j) => j.invoice && j.invoice.paid && inR(payDate(j)));
+  const exps = EXP.filter((e) => inR(e.date));
+  const invs = jobs.filter((j) => j.invoice && inR(etD(j.invoice.at)));
+  let head, out = [];
+  if (kind === 'qb') {
+    head = ['Date', 'Description', 'Amount'];
+    pays.forEach((j) => out.push([payDate(j), [usD(payDate(j)), 'Payment - ' + j.name + ' - ' + invNo(j) + ' (' + (PAYL[j.invoice.method] || 'payment') + ')' + (j.invoice.ref ? ' ' + j.invoice.ref : '')], paidAmt(j)]));
+    exps.forEach((e) => out.push([e.date, [usD(e.date), (e.vendor ? e.vendor + ' - ' : '') + e.category + (e.note ? ': ' + e.note : '')], -(Number(e.amount) || 0)]));
+    out.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+    rows.push(head.join(','));
+    out.forEach((r) => rows.push(csvT(r[1][0]) + ',' + csvT(r[1][1]) + ',' + csvN(r[2])));
+  } else {
+    head = ['Type', 'Date', 'Name', 'Number', 'Method / Category', 'Memo', 'Amount', 'Status'];
+    invs.forEach((j) => out.push([etD(j.invoice.at), ['Invoice', usD(etD(j.invoice.at)), j.name, invNo(j), '', (j.invoice.note || '').slice(0, 120), csvN(amtN(j.invoice.amount)), j.invoice.paid ? 'Paid' : 'Open']]));
+    pays.forEach((j) => out.push([payDate(j), ['Payment', usD(payDate(j)), j.name, invNo(j), PAYL[j.invoice.method] || '', j.invoice.ref || '', csvN(paidAmt(j)), 'Received']]));
+    exps.forEach((e) => out.push([e.date, ['Expense', usD(e.date), e.vendor || '', e.id, e.category, [e.note, e.tax != null ? 'Tax ' + csvN(e.tax) : ''].filter(Boolean).join(' | '), csvN(e.amount), e.receipt ? 'Receipt on file' : '']]));
+    out.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+    rows.push(head.join(','));
+    out.forEach((r) => rows.push(r[1].map((v, i) => (i === 6 ? v : csvT(v))).join(',')));
+  }
+  if (!out.length) return toast('Nothing to export for that period yet');
+  dlCsv('southern-concrete-' + (kind === 'qb' ? 'quickbooks-import' : 'detail') + '-' + y + '-' + todayET() + '.csv', rows.join('\r\n') + '\r\n');
+}
+function shrinkR(f) {
+  return new Promise((res, rej) => {
+    const i = new Image();
+    i.onload = () => {
+      const m = 1600, s = Math.min(1, m / Math.max(i.width, i.height)), c = document.createElement('canvas');
+      c.width = Math.round(i.width * s); c.height = Math.round(i.height * s);
+      c.getContext('2d').drawImage(i, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(i.src);
+      res(c.toDataURL('image/jpeg', 0.8));
+    };
+    i.onerror = () => rej(Error('photo'));
+    i.src = URL.createObjectURL(f);
+  });
+}
+function rqSave() { try { localStorage[RQK] = JSON.stringify(RQ.filter((j) => j.id && j.phase !== 'scan').map((j) => ({ tok: j.tok, id: j.id, phase: j.phase, data: j.data, ocr: j.ocr, reason: j.reason }))); } catch (e) {} }
+function rqLoad() { try { const a = JSON.parse(localStorage[RQK] || '[]'); RQ = a.map((j) => Object.assign(j, { prev: '' })); RCT = Math.max(RCT, ...a.map((j) => j.tok), 0); } catch (e) { RQ = []; } }
+rqLoad();
+const rqGet = (t) => RQ.find((j) => j.tok === t);
+function rcDropJob(j) { if (j && j.id && !j.saved) try { api({ a: 'rcdrop', pin: ownerPin(), id: j.id }).catch(function () {}); } catch (e) {} }
+function rqDel(j) { RQ = RQ.filter((x) => x !== j); if (RC === j) RC = null; rqSave(); renderQ(); }
+function renderQ() {
+  const el = $('#rq');
+  if (!el) return;
+  if (!role || !RQ.length) { el.innerHTML = ''; return; }
+  el.style.top = (($('header') && $('header').offsetHeight) || 64) + 'px';
+  el.innerHTML = RQ.map((j) => {
+    const t = j.tok;
+    if (j.phase === 'scan') return `<div class="rqi"><div class="spin sm"></div><span style="flex:1">Scanning receipt…</span><button class="x" type="button" onclick="rqCancel(${t})" aria-label="Cancel scan">✕</button></div>`;
+    if (j.phase === 'ready') return `<div class="rqi ok" onclick="rcOpen(${t})"><span style="flex:1">${j.ocr ? 'Receipt ready. Tap to review' : 'Receipt saved. Tap to add details'}</span><b>›</b></div>`;
+    return `<div class="rqi bad"><span style="flex:1;min-width:150px">Could not read that receipt</span><button type="button" onclick="rcRetry(${t})">Try again</button><button type="button" onclick="rcHand(${t})">Enter by hand</button></div>`;
+  }).join('');
+}
+function rqCancel(t) { const j = rqGet(t); if (!j) return; j.dead = true; rqDel(j); rcDropJob(j); }
+function rcOpen(t) { const j = rqGet(t); if (!j || j.phase === 'scan') return; RC = j; view = 'books'; cur = null; render(); window.scrollTo(0, 0); }
+function rcHand(t) { const j = rqGet(t); if (!j) return; j.phase = 'ready'; j.ocr = false; j.data = {}; rqSave(); rcOpen(t); }
+function rcRetry(t) { const j = rqGet(t); if (!j || j.phase === 'scan') return; j.phase = 'scan'; renderQ(); rcRun(j); }
+async function rcRun(j) {
+  const tok = j.tok;
+  try {
+    const r = j.id ? await api({ a: 'rcrescan', pin: ownerPin(), id: j.id }) : await api({ a: 'rcscan', pin: ownerPin(), image: j.img });
+    if (j.dead) { if (r.receiptId) api({ a: 'rcdrop', pin: ownerPin(), id: r.receiptId }).catch(function () {}); return; }
+    Object.assign(j, { id: r.receiptId || j.id, ocr: !!r.ocr, data: r.data || {}, reason: r.reason || '', offline: false });
+    j.phase = (r.ocr || r.reason === 'none') ? 'ready' : 'failed';
+    if (j.id) delete j.img;
+  } catch (e) {
+    if (j.dead) return;
+    Object.assign(j, { phase: 'failed', ocr: false, data: {}, reason: e.message || '', offline: !j.id });
+  }
+  rqSave();
+  renderQ();
+  if (j.phase === 'ready') toast(j.ocr ? 'Receipt ready. Tap the banner to review.' : 'Receipt saved. Tap the banner to add details.');
+  else toast('Could not read the receipt. Use the banner at the top.');
+}
+function rcCancel() { const j = RC; if (j) { rqDel(j); rcDropJob(j); } RC = null; bookScreen(); window.scrollTo(0, 0); }
+async function scanR(inp) {
+  const f = inp.files[0];
+  const retake = inp.id === 'rf2';
+  inp.value = '';
+  if (!f) return;
+  const tok = ++RCT, j = { tok, phase: 'scan', prev: URL.createObjectURL(f) };
+  if (retake && RC) { const o = RC; rqDel(o); rcDropJob(o); RC = null; }
+  RQ.push(j);
+  renderQ();
+  if (view === 'books' && !cur) bookScreen();
+  window.scrollTo(0, 0);
+  toast('Scanning receipt. You can keep working.');
+  try { j.img = await shrinkR(f); } catch (e) { rqDel(j); return toast('Could not read that photo. Please try again.'); }
+  if (j.dead) return;
+  rcRun(j);
+}
+function rcScreen() {
+  if (!RC) return bookScreen();
+  if (RC.phase === 'scan') {
+    A.innerHTML = `<div class="card" style="text-align:center"><h2>Reading your receipt</h2><img class="rpv" alt="" src="${RC.prev}"><div class="spin"></div><p class="muted" style="margin:0">This takes a few seconds.</p></div><button class="btn gr" type="button" onclick="rcCancel()">Cancel</button>`;
+    return;
+  }
+  const d = RC.data || {}, items = d.items || [];
+  const note = RC.ocr ? '<p class="muted" style="margin:0 0 4px">Read automatically. Check the details and fix anything that looks off.</p>' : `<p style="margin:0 0 4px;background:#fff6e5;border-radius:12px;padding:12px;color:#7a5b00;font-size:15px">${RC.reason === 'none' ? 'Automatic reading is not turned on yet, so fill in the details below.' : 'This one could not be read automatically, so fill in the details below.'}${RC.offline ? ' The photo could not be uploaded, but you can still save the expense.' : ''}</p>`;
+  A.innerHTML = `<button class="btn gr" type="button" style="margin:0 0 12px" onclick="go('books')">← Bookkeeping</button><div class="card"><h2>Check this receipt</h2><img class="rpv" alt="" src="${RC.prev || ''}" style="max-height:200px;margin-bottom:12px">${note}
+<label>Vendor</label><input id="rv" autocomplete="off" value="${esc(d.vendor || '')}">
+<div class="row"><div><label>Total</label><input id="rt" inputmode="decimal" placeholder="$0.00" value="${d.total != null ? d.total : ''}"></div><div><label>Tax</label><input id="rx" inputmode="decimal" placeholder="$0.00" value="${d.tax != null ? d.tax : ''}"></div></div>
+<label>Date</label><input id="rd" type="date" value="${esc(d.date || todayET())}">
+<label>Category</label><select id="rc">${EXC.map((c) => `<option ${c === (d.category || 'Other') ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
+<label>Note (optional)</label><input id="rn" autocomplete="off" placeholder="What was it for?">
+${items.length ? `<h2 style="margin-top:18px">Line items (${items.length})</h2>${items.map((i) => `<div class="kv" style="font-size:15px"><span>${esc(i.d)}</span><b>${i.a != null ? SCCQuote.money(i.a) : ''}</b></div>`).join('')}` : ''}
+<button class="btn huge" id="rsave" type="button" onclick="rcSave()">Save expense</button>
+<input type="file" id="rf2" accept="image/*" capture="environment" hidden onchange="scanR(this)"><button class="btn n" type="button" onclick="$('#rf2').click()">Retake photo</button><button class="btn gr" type="button" onclick="rcCancel()">Cancel</button></div>`;
+}
+async function rcSave() {
+  const J = RC;
+  if (!J) return;
+  const t = amtN($('#rt').value);
+  if (!(t > 0)) return toast('Enter the total');
+  const b = $('#rsave');
+  b.disabled = true;
+  b.textContent = 'Saving…';
+  const items = ((J.data && J.data.items) || []).map((i) => ({ d: i.d, a: i.a }));
+  try {
+    const r = await api({ a: 'expadd', pin: ownerPin(), amount: t, category: $('#rc').value, note: $('#rn').value.trim(), date: $('#rd').value, vendor: $('#rv').value.trim(), tax: $('#rx').value, items, receiptId: J.id || '', image: J.id ? '' : (J.img || ''), scanned: !!J.ocr });
+    EXP = r.expenses || [];
+    EXPL = true;
+    J.saved = true;
+    rqDel(J);
+    toast('Expense saved with receipt');
+    if (view === 'books' && !cur && !RC) { bookScreen(); window.scrollTo(0, 0); }
+  } catch (e) { toast(e.message); b.disabled = false; b.textContent = 'Save expense'; }
+}
+function setScreen() {
+  const S = SET || {};
+  A.innerHTML = `<button class="btn gr" type="button" style="margin:0 0 12px" onclick="homeBtn()">← Home</button>
+<div class="card"><h2>Settings</h2><p class="muted" style="margin:0">Links customers see in their emails. Leave a box empty to hide that button.</p></div>
+<div class="card"><h2>Payments</h2><label>Payment link (Stripe, Square or PayPal)</label><input id="sp" type="url" inputmode="url" autocomplete="off" autocapitalize="off" placeholder="https://..." value="${esc(S.payLink || '')}">
+<p class="muted" style="margin:6px 0 0">Adds a Pay now button to quote and invoice emails. Create a payment link in Stripe, Square or PayPal and paste it here.</p></div>
+<div class="card"><h2>Reviews</h2><label>Google review link</label><input id="sr" type="url" inputmode="url" autocomplete="off" autocapitalize="off" placeholder="https://g.page/r/.../review" value="${esc(S.reviewLink || '')}">
+<p class="muted" style="margin:6px 0 0">Used by the Request review button on finished and paid jobs. In your Google Business Profile, tap Ask for reviews and copy the link.</p></div>
+<div class="card"><h2>Pay over time</h2><label>Financing link</label><input id="sf" type="url" inputmode="url" autocomplete="off" autocapitalize="off" placeholder="https://..." value="${esc(S.finLink || '')}">
+<label>Show it on quotes and invoices of at least ($)</label><input id="sm" inputmode="decimal" value="${esc(S.finMin == null ? 1000 : S.finMin)}">
+<p class="muted" style="margin:6px 0 0">Adds a Pay over time button. Hidden when no link is set or the amount is below this number.</p></div>
+<button class="btn huge" id="ss" type="button" onclick="saveSet()">Save settings</button>`;
+}
+async function saveSet() {
+  const b = $('#ss');
+  b.disabled = true;
+  b.textContent = 'Saving…';
+  try {
+    const r = await api({ a: 'settings', pin: ownerPin(), payLink: $('#sp').value.trim(), reviewLink: $('#sr').value.trim(), finLink: $('#sf').value.trim(), finMin: $('#sm').value });
+    SET = r.settings || SET;
+    toast('Settings saved');
+    b.disabled = false;
+    b.textContent = 'Save settings';
+    setScreen();
+  } catch (e) { toast(e.message); b.disabled = false; b.textContent = 'Save settings'; }
 }
 
 if (role) refresh().then(render);

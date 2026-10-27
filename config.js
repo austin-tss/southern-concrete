@@ -1,9 +1,8 @@
-/* Southern Concrete Coatings Field Desk
+/* Southern Concrete Coatings
    TEST_MODE is the single switch for outgoing mail.
+   false = mail goes to the customer address stored on the job. This copy is live.
    true  = every email is forced to TEST_TO. Code.gs enforces the same flag.
-   false = mail goes to the customer address stored on the job.
-   Leave this true until you are ready for real customers, and change it in
-   Code.gs at the same time. Both copies must match. */
+   Both copies must match. Keep this false unless you mean to stop customer mail. */
 var TEST_MODE = false;
 var TEST_TO = 'austin@techsourcedsolutions.com';
 
@@ -19,7 +18,6 @@ var API_URL = 'https://script.google.com/macros/s/AKfycbz-NoJHojOq7xZz-iBWu78Nrh
 
 var CO = {
   name: 'Southern Concrete Coatings',
-  desk: 'Field Desk',
   legal: 'Southern Concrete Coatings LLC',
   addr: 'Tallahassee, FL',
   phone: '(850) 766-9992',

@@ -143,3 +143,19 @@ test('response form offers the chosen answer and a time window', () => {
   assert.match(html, /Anytime/);
   assert.match(html, /When can the crew have the floor/);
 });
+
+test('pay and financing links appear only when settings allow them', () => {
+  const job = {
+    name: 'Pat', address: '1 Call St', email: 'pat@example.com', est: 'SCC-EST-2026-0001',
+    items: [{ title: 'Garage Floor Flake System', detail: '480 sq ft', price: 3120 }],
+    total: 3120, invoice: { amount: '$3,120.00', note: 'Due now' }
+  };
+  const base = { co, colors, job, testMode: false, testTo: TEST_TO, logoSrc: 'cid:logo', link: (k) => 'https://script.example/?ans=' + k };
+  assert.doesNotMatch(q.quoteEmailHtml(base), /Pay now/);
+  const on = Object.assign({}, base, { settings: { payLink: 'https://pay.example/scc', finLink: 'https://finance.example/scc', finMin: 1000 } });
+  assert.match(q.quoteEmailHtml(on), /Pay now/);
+  assert.match(q.quoteEmailHtml(on), /Pay over time/);
+  assert.match(q.invoiceEmailHtml(on), /Pay now/);
+  const small = Object.assign({}, base, { job: Object.assign({}, job, { total: 400, invoice: { amount: '$400.00' } }), settings: { payLink: '', finLink: 'https://finance.example/scc', finMin: 1000 } });
+  assert.doesNotMatch(q.invoiceEmailHtml(small), /Pay over time/);
+});

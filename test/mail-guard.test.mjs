@@ -15,8 +15,8 @@ function flag(src, name) {
 }
 
 test('test mode is the same single flag in the browser and Apps Script', () => {
-  assert.equal(flag(config, 'TEST_MODE'), 'true');
-  assert.equal(flag(code, 'TEST_MODE'), 'true');
+  assert.equal(flag(config, 'TEST_MODE'), 'false');
+  assert.equal(flag(code, 'TEST_MODE'), 'false');
   assert.equal(flag(config, 'TEST_TO'), flag(code, 'TEST_TO'));
   assert.equal(flag(config, 'TEST_TO'), "'austin@techsourcedsolutions.com'");
 });
@@ -36,9 +36,13 @@ test('app copy has no tree-service wording and no powershell', () => {
   assert.doesNotMatch(appFiles, /\btree\b/i);
 });
 
-test('config does not point at the Fielder web app', () => {
-  assert.match(config, /var API_URL = '';/);
-  assert.doesNotMatch(config + '\n' + code, /AKfycb/);
+test('config points at this deployment and not another shop script', () => {
+  assert.equal(flag(config, 'API_URL'), "'https://script.google.com/macros/s/AKfycbz-NoJHojOq7xZz-iBWu78NrhX4J-pv-6q4BVrPVdx8A5h4CqG_vt3hY4ZE4dKq77Oq/exec'");
+  for (const id of [
+    'AKfycbwQDIAb7fwXFVL6g9AjA-tKGoUcwal0-tozzbwJ4EOcNnaHE4AcqUOxdXuNMvRpKYJAlw',
+    'AKfycbyyffd44MggLNMCmREyiJ2bK_l_iv4vWgen7cQopPdlRym9Cdiecc098WV-7ArySvhm',
+    'AKfycby_s3cPkFxzuFEx9FiobJsKez_3R4h2eVG4Tliemjnou3OSGx2_itRgGYUtCI5C5z8geQ'
+  ]) assert.doesNotMatch(config + '\n' + code, new RegExp(id));
 });
 
 test('quote email builders refuse a customer recipient while test mode is on', () => {

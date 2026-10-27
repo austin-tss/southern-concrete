@@ -18,7 +18,17 @@ const COLORS = { n: '#3a415c', g: '#424866', dg: '#2a3148' };
 const jobs = [];
 const blocks = [];
 const inbox = [];
+const expenses = [];
+const receipts = new Map();
+let settings = { payLink: '', reviewLink: '', finLink: '', finMin: 1000, ocr: false };
 let seq = 1;
+let rcSeq = 1;
+const OWNER_PIN = Object.keys(sandbox.ROLES || {}).find((k) => sandbox.ROLES[k] === 'Owner') || '';
+function pinOk(d) { return String((d && d.pin) || '') === OWNER_PIN; }
+function moneyNum(v) {
+  const n = parseFloat(String(v == null ? '' : v).replace(/[^0-9.\-]/g, ''));
+  return Number.isNaN(n) ? 0 : n;
+}
 
 function envelope(job) {
   const env = q.deliveryAddress(TEST_MODE, TEST_TO, job && job.email, CO.email);
@@ -45,6 +55,57 @@ function respond(j, p) {
   j.status = (p.ans === 'A' || p.ans === 'B') ? 'approved' : (p.ans === 'C' ? 'declined' : 'reply');
 }
 function handle(d) {
+  if (d.a === 'signin' || d.a === 'log') return { ok: true };
+  if (['settings', 'explist', 'expadd', 'expdel', 'rcscan', 'rcrescan', 'rcdrop'].includes(d.a)) {
+    if (!pinOk(d)) return { ok: false, err: 'Wrong PIN' };
+    if (d.a === 'settings') {
+      const fm = Number(String(d.finMin == null ? '' : d.finMin).replace(/[^0-9.\-]/g, ''));
+      settings = {
+        payLink: String(d.payLink || '').trim(),
+        reviewLink: String(d.reviewLink || '').trim(),
+        finLink: String(d.finLink || '').trim(),
+        finMin: Number.isNaN(fm) ? 1000 : fm,
+        ocr: false
+      };
+      return { ok: true, settings };
+    }
+    if (d.a === 'explist') return { ok: true, expenses };
+    if (d.a === 'expadd') {
+      const amt = moneyNum(d.amount);
+      if (!(amt > 0)) return { ok: false, err: 'Enter the amount' };
+      let receipt = String(d.receiptId || '');
+      if (!receipt && d.image) { receipt = 'RC' + (rcSeq++); receipts.set(receipt, d.image); }
+      expenses.unshift({
+        id: 'EX' + (seq++), amount: amt, category: d.category || 'Other', note: d.note || '',
+        date: d.date || '2026-10-27', vendor: d.vendor || '',
+        tax: d.tax == null || d.tax === '' ? null : moneyNum(d.tax),
+        items: d.items || [], receipt, scanned: !!d.scanned, created: new Date().toISOString()
+      });
+      return { ok: true, expenses };
+    }
+    if (d.a === 'expdel') {
+      for (let i = expenses.length - 1; i >= 0; i--) if (expenses[i].id === d.id) expenses.splice(i, 1);
+      return { ok: true, expenses };
+    }
+    if (d.a === 'rcscan') {
+      const id = 'RC' + (rcSeq++);
+      receipts.set(id, d.image || '');
+      return { ok: true, receiptId: id, ocr: false, reason: 'none', data: {} };
+    }
+    if (d.a === 'rcrescan') return { ok: true, receiptId: d.id || '', ocr: false, reason: 'none', data: {} };
+    if (d.a === 'rcdrop') { receipts.delete(d.id); return { ok: true }; }
+  }
+  if (d.a === 'delete') {
+    if (!pinOk(d)) return { ok: false, err: 'Wrong PIN' };
+    const i = jobs.findIndex((x) => x.id === d.id);
+    if (i >= 0) jobs.splice(i, 1);
+    return { ok: true };
+  }
+  if (d.a === 'phone') {
+    const ids = d.ids || [];
+    jobs.forEach((x) => { if (ids.includes(x.id)) x.phone = String(d.phone || '').trim(); });
+    return { ok: true };
+  }
   if (d.a === 'block' || d.a === 'unblock') {
     const id = d.block && d.block.id;
     for (let i = blocks.length - 1; i >= 0; i--) if (blocks[i].id === id) blocks.splice(i, 1);
@@ -62,7 +123,7 @@ function handle(d) {
     const j = {
       id: 'SCC-' + (seq++).toString(36).toUpperCase(),
       est: 'SCC-EST-2026-' + String(seq).padStart(4, '0'),
-      name: d.name, address: d.address, email: String(d.email || '').trim(),
+      name: d.name, address: d.address, email: String(d.email || '').trim(), phone: String(d.phone || '').trim(),
       quote: d.quote || '', sqft: numField(d.sqft), system: d.system || '', color: d.color || '',
       prep: d.prep || '', cure: d.cure || '', rate: numField(d.rate),
       items, total: q.totalOf(items), status: 'sent', created: new Date().toISOString(),
@@ -72,7 +133,7 @@ function handle(d) {
     };
     const html = q.quoteEmailHtml({
       co: CO, colors: COLORS, job: Object.assign({ date: 'October 27, 2026' }, j),
-      testMode: TEST_MODE, testTo: TEST_TO, logoSrc: 'cid:logo', photosHtml: j.photos.length ? '<img alt="site">' : '',
+      testMode: TEST_MODE, testTo: TEST_TO, logoSrc: 'cid:logo', settings, photosHtml: j.photos.length ? '<img alt="site">' : '',
       link: (k) => '/exec?a=respond&id=' + encodeURIComponent(j.id) + '&ans=' + k
     });
     record('quote', j, 'Your concrete coating estimate from Southern Concrete Coatings - ' + j.est, html);
@@ -105,7 +166,22 @@ function handle(d) {
     if (!q.validEmail(d.email)) return { ok: false, err: 'Invalid email' };
     j.email = String(d.email).trim();
   } else if (d.a === 'respond') respond(j, d);
-  else if (d.a === 'resend') {
+  else if (d.a === 'markpaid') {
+    j.invoice = j.invoice || {};
+    j.invoice.paid = true;
+    j.invoice.paidAt = new Date().toISOString();
+    j.invoice.paidDate = String(d.date || '');
+    j.invoice.method = String(d.method || '');
+    j.invoice.amountPaid = moneyNum(d.amount);
+    j.invoice.ref = String(d.ref || '');
+    if (!j.invoice.amount) j.invoice.amount = q.money(j.invoice.amountPaid);
+    if (!j.invoice.at) j.invoice.at = j.invoice.paidAt;
+    j.status = 'invoiced';
+  } else if (d.a === 'reqreview') {
+    if (!settings.reviewLink) return { ok: false, err: 'Add a Google review link in Settings first.' };
+    j.review = { at: new Date().toISOString(), count: ((j.review && j.review.count) || 0) + 1 };
+    record('review', j, 'How did we do? Southern Concrete Coatings', 'Leave a review');
+  } else if (d.a === 'resend' || d.a === 'resendquote') {
     if (!j.est) return { ok: false, err: 'This job has no quote to resend' };
     j.resent = (j.resent || 0) + 1;
     j.resentAt = new Date().toISOString();
@@ -163,7 +239,7 @@ function start(port) {
         return;
       }
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: true, testMode: TEST_MODE, testTo: TEST_TO, root: 'https://drive.google.com/drive/folders/scc-root', jobs, blocks }));
+      res.end(JSON.stringify({ ok: true, test: TEST_MODE, testMode: TEST_MODE, testTo: TEST_TO, root: 'https://drive.google.com/drive/folders/scc-root', jobs, blocks, settings }));
       return;
     }
     let rel = decodeURIComponent(url.pathname);

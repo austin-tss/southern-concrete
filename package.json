@@ -1,5 +1,5 @@
 {
-  "name": "southern-concrete-field-desk",
+  "name": "southern-concrete",
   "private": true,
   "scripts": {
     "test": "node --test test/quote.test.mjs test/mail-guard.test.mjs",
