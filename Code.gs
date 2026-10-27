@@ -320,7 +320,7 @@ var SCCQuote={
 };
 if(typeof module!=='undefined'&&module.exports)module.exports=SCCQuote;
 
-var TEST_MODE = true; // single server flag — keep identical to config.js TEST_MODE
+var TEST_MODE = false; // single server flag — keep identical to config.js TEST_MODE
 var TEST_TO = 'austin@techsourcedsolutions.com';
 var ROOT_NAME = 'Southern Concrete Coatings Field Desk';
 var CO = {
