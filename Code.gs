@@ -770,7 +770,8 @@ function settings_() {
   return {
     payLink: String(o.payLink || ''), reviewLink: String(o.reviewLink || ''), finLink: String(o.finLink || ''), finMin: min, ocr: o.ocr === false ? false : true, qbo: qboPublic_(),
     form: normalizeForm(o.form), mileRate: mileRate_(o.mileRate), theme: o.theme === 'classic' ? 'classic' : 'dark',
-    quoteBody: String(o.quoteBody || ''), quoteSubject: String(o.quoteSubject || ''), quoteSign: String(o.quoteSign || '')
+    quoteBody: String(o.quoteBody || ''), quoteSubject: String(o.quoteSubject || ''), quoteSign: String(o.quoteSign || ''),
+    galleryHide: galleryHide_(o.galleryHide)
   };
 }
 function moneyNum_(v) {
@@ -800,6 +801,17 @@ function galleryFolder_() {
 function gallery_() {
   var list = load_('gallery.json');
   return Array.isArray(list) ? list : [];
+}
+function galleryHide_(v) {
+  var a = Array.isArray(v) ? v : [];
+  var out = [], seen = {};
+  for (var i = 0; i < a.length && out.length < 200; i++) {
+    var id = String(a[i] || '').trim().slice(0, 80);
+    if (!id || seen[id] || id.indexOf('sim-') !== 0) continue;
+    seen[id] = 1;
+    out.push(id);
+  }
+  return out;
 }
 function scriptProp_(name) {
   try {
@@ -1670,6 +1682,7 @@ function doPost(e) {
         curS.quoteBody = String(d.quoteBody || '').trim().slice(0, 4000);
         curS.quoteSubject = String(d.quoteSubject || '').trim().slice(0, 300);
         curS.quoteSign = String(d.quoteSign || '').trim().slice(0, 800);
+        if (Array.isArray(d.galleryHide)) curS.galleryHide = galleryHide_(d.galleryHide);
         save_(curS, 'settings.json');
         return out_({ ok: true, settings: settings_() });
       }

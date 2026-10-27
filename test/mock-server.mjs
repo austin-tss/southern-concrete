@@ -25,7 +25,7 @@ const gallery = [];
 let measureOn = false;
 let fillOn = false;
 const trips = [];
-let settings = { payLink: '', reviewLink: '', finLink: '', finMin: 1000, ocr: true, theme: 'dark', mileRate: 0.7, quoteBody: '', quoteSubject: '', quoteSign: '', form: null, qbo: { connected: false, env: 'sandbox' } };
+let settings = { payLink: '', reviewLink: '', finLink: '', finMin: 1000, ocr: true, theme: 'dark', mileRate: 0.7, quoteBody: '', quoteSubject: '', quoteSign: '', form: null, galleryHide: [], qbo: { connected: false, env: 'sandbox' } };
 let seq = 1;
 let rcSeq = 1;
 const OWNER_PIN = Object.keys(sandbox.ROLES || {}).find((k) => sandbox.ROLES[k] === 'Owner') || '';
@@ -147,7 +147,10 @@ function handle(d) {
         qbo: settings.qbo || { connected: false, env: 'sandbox' },
         quoteBody: String(d.quoteBody || '').trim().slice(0, 4000),
         quoteSubject: String(d.quoteSubject || '').trim().slice(0, 300),
-        quoteSign: String(d.quoteSign || '').trim().slice(0, 800)
+        quoteSign: String(d.quoteSign || '').trim().slice(0, 800),
+        galleryHide: Array.isArray(d.galleryHide)
+          ? [...new Set(d.galleryHide.map((id) => String(id || '').trim()).filter((id) => id.startsWith('sim-')))].slice(0, 200)
+          : (settings.galleryHide || [])
       };
       return { ok: true, settings };
     }

@@ -61,7 +61,15 @@ test('the gallery screen and the upload action leave hardness and notes alone', 
   assert.ok(ui.includes('function galScreen'));
   assert.doesNotMatch(ui, /hardness|internalNotes|Mohs/);
   assert.match(ui, /Photos:/);
+  assert.match(ui, /id="gedit"/);
+  assert.match(ui, /gEdit\(!GEDIT\)/);
+  assert.match(ui, /Delete this photo\?/);
+  assert.match(ui, /a: 'gdel'/);
+  assert.match(app, /galleryHide/);
+  assert.match(app, /Restore deleted photos/);
   const code = fs.readFileSync(new URL('../Code.gs', import.meta.url), 'utf8');
+  assert.match(code, /function galleryHide_/);
+  assert.match(code, /curS\.galleryHide = galleryHide_/);
   assert.match(code, /getFoldersByName\('Gallery'\)/);
   assert.match(code, /gallery: gallery_\(\)/);
   const gadd = code.slice(code.indexOf("d.a === 'gadd'"), code.indexOf("d.a === 'gdel'"));

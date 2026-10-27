@@ -117,7 +117,9 @@ a{color:var(--dg)}
 .rpv{display:block;width:100%;max-height:220px;object-fit:contain;border-radius:14px;background:#eef0f4}
 .rth{width:60px;height:60px;object-fit:cover;border-radius:10px;background:#eef0f4;flex:0 0 60px}
 .ggrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
-.ggrid button{display:block;padding:0;border:0;background:#fff;border-radius:16px;overflow:hidden;text-align:left;color:var(--n);box-shadow:0 1px 2px rgba(58,65,92,.05),0 4px 12px rgba(58,65,92,.04);cursor:pointer}
+.gitem{position:relative}
+.gitem > button.gpic{display:block;width:100%;padding:0;border:0;background:#fff;border-radius:16px;overflow:hidden;text-align:left;color:var(--n);box-shadow:0 1px 2px rgba(58,65,92,.05),0 4px 12px rgba(58,65,92,.04);cursor:pointer}
+.gx{position:absolute;z-index:2;top:8px;right:8px;width:32px;height:32px;border:0;border-radius:16px;padding:0;background:#b42318;color:#fff;font:700 16px/32px Arial,Helvetica,sans-serif;text-align:center;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.3)}
 .ggrid img{width:100%;aspect-ratio:1;object-fit:cover;display:block;background:#e8eaf0}
 .ggrid span{display:block;padding:10px 12px 14px;font-weight:700;font-size:16px}
 #gv{position:fixed;inset:0;z-index:40;background:#f4f5f7;display:flex;flex-direction:column;padding:12px 14px 18px}
@@ -145,7 +147,7 @@ a{color:var(--dg)}
 [data-theme="dark"] a{color:#8ea2d6}
 [data-theme="dark"] #toast{background:#404868}
 [data-theme="dark"] #gv{background:#1e2126}
-[data-theme="dark"] #gv img,[data-theme="dark"] .ggrid button,[data-theme="dark"] .rpv,[data-theme="dark"] .rth{background:#23262c}
+[data-theme="dark"] #gv img,[data-theme="dark"] .gitem > button.gpic,[data-theme="dark"] .rpv,[data-theme="dark"] .rth{background:#23262c}
 [data-theme="dark"] .ggrid span{color:#fff}
 [data-theme="dark"] .hbrand{display:flex;align-items:center;gap:12px;margin:2px 0 16px}
 [data-theme="dark"] .hbrand img{height:46px;width:auto;background:#fff;border-radius:10px;padding:3px}
@@ -186,9 +188,9 @@ a{color:var(--dg)}
     <button class="btn n" onclick="nav(1)">▶</button>
   </div>
 </div>
-<script src="config.js?v=20261027e"></script>
-<script src="quote.js?v=20261027e"></script>
-<script src="gallery.js?v=20261027e"></script>
-<script src="app.js?v=20261027e"></script>
+<script src="config.js?v=20261027f"></script>
+<script src="quote.js?v=20261027f"></script>
+<script src="gallery.js?v=20261027f"></script>
+<script src="app.js?v=20261027f"></script>
 </body>
 </html>

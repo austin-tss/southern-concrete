@@ -6,7 +6,7 @@ let blocks = [], role = sessionStorage.sccRole || '', jobs = [], root = '', cur 
 let serverTest = null, view = '', SET = {}, EXP = [], EXPL = false, EXPLOAD = false, PAYING = '', PAYM = 'check', CK = '', CQ = '', CL = [], SQ = '', tab = 'est';
 let RC = null, RCT = 0, RQ = [];
 let jtab = 'job', jtabFor = null, editId = '';
-let GALS = [], GQ = '', GVIEW = [], GI = 0, GPIC = '', GX = 0;
+let GALS = [], GQ = '', GVIEW = [], GI = 0, GPIC = '', GX = 0, GEDIT = false;
 const $ = (s) => document.querySelector(s);
 const A = $('#app');
 let SKIPNAV = false;
@@ -622,13 +622,46 @@ function go(v) {
   window.scrollTo(0, 0);
 }
 
+function galleryHideList() {
+  let local = [];
+  try { local = JSON.parse(localStorage.sccGalleryHide || '[]'); } catch (e) { local = []; }
+  if (!Array.isArray(local)) local = [];
+  const remote = (SET && Array.isArray(SET.galleryHide)) ? SET.galleryHide : [];
+  const seen = {}, out = [];
+  local.concat(remote).forEach((id) => {
+    id = String(id || '');
+    if (!id || seen[id]) return;
+    seen[id] = 1;
+    out.push(id);
+  });
+  return out;
+}
+function rememberHide(ids) {
+  const list = ids.filter((id) => String(id || '').indexOf('sim-') === 0);
+  localStorage.sccGalleryHide = JSON.stringify(list);
+  if (!SET || typeof SET !== 'object') SET = {};
+  SET.galleryHide = list.slice();
+  return list;
+}
 function gHits() {
-  return SCCGallery.match(GQ, (GALS || []).map(SCCGallery.ownPhoto));
+  const hide = new Set(galleryHideList());
+  return SCCGallery.match(GQ, (GALS || []).map(SCCGallery.ownPhoto)).filter((it) => !hide.has(it.id));
 }
 function gqSet(v) { GQ = v; glist(); }
+function gEdit(on) {
+  GEDIT = !!on;
+  const b = $('#gedit');
+  if (b) {
+    b.textContent = GEDIT ? 'Done' : 'Edit';
+    b.className = 'btn ' + (GEDIT ? 'gr' : 'n');
+  }
+  glist();
+}
 function galScreen() {
+  GEDIT = false;
   A.innerHTML = `<div class="card" style="margin-bottom:10px"><h2 style="margin-bottom:8px">Gallery</h2>
 <input id="gq" type="search" enterkeyhint="search" placeholder="Try gray flake garage floor" value="${esc(GQ)}" autocomplete="off" oninput="gqSet(this.value)" style="font-size:20px;padding:18px">
+<button class="btn n" id="gedit" type="button" onclick="gEdit(!GEDIT)">Edit</button>
 <p class="muted" style="margin:10px 0 0">Photos: <a href="${esc(SCCGallery.simiron)}" target="_blank" rel="noopener">Simiron</a></p></div>
 <button class="btn huge" id="gshow" type="button" onclick="gshow()">Show photos</button>
 <button class="btn n" type="button" onclick="$('#gfile').click()">Upload a photo</button>
@@ -648,8 +681,53 @@ function glist() {
     show.disabled = !hits.length;
     show.textContent = hits.length ? 'Show ' + hits.length + ' photo' + (hits.length === 1 ? '' : 's') : 'No matching photos';
   }
-  el.innerHTML = (hits.length ? '' : '<p class="muted" style="text-align:center;padding:18px">Nothing matches that. Try flake, quartz, or a color.</p>') +
-    '<div class="ggrid">' + hits.map((it, i) => `<button type="button" onclick="gopen(${i})"><img src="${esc(it.src)}" alt="${esc(it.name)}"><span>${esc(it.name)}</span></button>`).join('') + '</div>';
+  const cells = hits.map((it, i) => {
+    const x = GEDIT ? `<button class="gx" type="button" aria-label="Delete ${esc(it.name)}" onclick="gxDel('${esc(it.id)}')">✕</button>` : '';
+    const open = GEDIT ? '' : ` onclick="gopen(${i})"`;
+    return `<div class="gitem">${x}<button class="gpic" type="button"${open}><img src="${esc(it.src)}" alt="${esc(it.name)}"><span>${esc(it.name)}</span></button></div>`;
+  }).join('');
+  el.innerHTML = (GEDIT ? '<p class="muted" style="margin:8px 0 0">Tap the X on a photo to delete it.</p>' : '') +
+    (hits.length ? '' : '<p class="muted" style="text-align:center;padding:18px">Nothing matches that. Try flake, quartz, or a color.</p>') +
+    '<div class="ggrid">' + cells + '</div>';
+}
+async function persistHide(ids) {
+  const list = rememberHide(ids);
+  try {
+    const r = await api(Object.assign(setPayload(), { galleryHide: list }));
+    if (r.settings) {
+      const kept = list.slice();
+      SET = r.settings;
+      if (!Array.isArray(SET.galleryHide)) SET.galleryHide = kept;
+    }
+    rememberHide(galleryHideList());
+  } catch (e) { toast(e.message); }
+}
+async function gxDel(id) {
+  if (!confirm('Delete this photo?')) return;
+  const it = SCCGallery.match('', (GALS || []).map(SCCGallery.ownPhoto)).find((x) => x.id === id);
+  if (it && it.ours) {
+    try {
+      const r = await api({ a: 'gdel', id: id });
+      if (Array.isArray(r.gallery)) GALS = r.gallery;
+      toast('Photo removed');
+      if ($('#gv') && !$('#gv').hidden) gclose();
+      glist();
+    } catch (e) { toast(e.message); }
+    return;
+  }
+  const ids = galleryHideList();
+  if (ids.indexOf(id) < 0) ids.push(id);
+  await persistHide(ids);
+  toast('Photo removed');
+  glist();
+}
+async function restoreGallery() {
+  if (!galleryHideList().length) { toast('No hidden photos'); return; }
+  if (!confirm('Restore deleted gallery photos?')) return;
+  await persistHide([]);
+  toast('Gallery photos restored');
+  if (view === 'set') setScreen();
+  if (view === 'gal') glist();
 }
 function gshow() { if (gHits().length) gopen(0); }
 function gopen(i) {
@@ -1882,6 +1960,8 @@ function setSumText() {
   write('rev', clipLine(rev, 'No review link'));
   write('fin', fin ? clipLine(fin, '') : ('No financing link' + (min ? ' · from $' + min : '')));
   write('mail', stock ? 'Default wording' : clipLine(first || sub, 'Default wording'));
+  const hiddenN = galleryHideList().length;
+  write('gal', hiddenN ? hiddenN + ' hidden' : 'None hidden');
 }
 function tgSet(id) {
   const e = document.getElementById('srow-' + id);
@@ -1971,7 +2051,8 @@ function setPayload() {
     quoteBody: $('#qbody') ? $('#qbody').value.trim() : ((SET && SET.quoteBody) || ''),
     quoteSign: $('#qsign') ? $('#qsign').value.trim() : ((SET && SET.quoteSign) || ''),
     theme: themeName(),
-    form: FORM || formCfg()
+    form: FORM || formCfg(),
+    galleryHide: galleryHideList()
   };
 }
 function pickTheme(name) {
@@ -1999,6 +2080,8 @@ ${srow('mail', 'Customer email', `<p class="muted" style="margin:0 0 8px">This w
 <p class="muted">Line breaks stay. {name}, {estimate}, and {address} fill in for that customer.</p>
 <button class="btn gr" id="qreset" type="button" onclick="resetEmailCopy()">Reset to default</button>`)}
 ${srow('form', 'Quote form', formEditorHtml())}
+${srow('gal', 'Gallery photos', `<p class="muted" style="margin:0 0 8px">Photos you upload are removed for good. Built-in swatches stay hidden until you restore them.</p>
+<button class="btn gr" id="grestore" type="button" onclick="restoreGallery()">Restore deleted photos</button>`)}
 ${qboRow()}
 <button class="btn huge" id="ss" type="button" onclick="saveSet()">Save settings</button>`;
   setSumText();
