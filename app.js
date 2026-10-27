@@ -9,6 +9,86 @@ let jtab = 'job', jtabFor = null, editId = '';
 let GALS = [], GQ = '', GVIEW = [], GI = 0, GPIC = '', GX = 0;
 const $ = (s) => document.querySelector(s);
 const A = $('#app');
+let SKIPNAV = false;
+let MILES = [];
+let MLOAD = false;
+let MREADY = false;
+let CEDIT = false;
+let FORM = null;
+function themeName() {
+  if (localStorage.sccTheme === 'classic' || localStorage.sccTheme === 'dark') return localStorage.sccTheme;
+  if (SET && SET.theme === 'classic') return 'classic';
+  return 'dark';
+}
+function applyTheme(name) {
+  const dark = name !== 'classic';
+  if (dark) document.documentElement.setAttribute('data-theme', 'dark');
+  else document.documentElement.removeAttribute('data-theme');
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', dark ? '#1e2126' : '#3a415c');
+  const scheme = document.querySelector('meta[name="color-scheme"]');
+  if (scheme) scheme.setAttribute('content', dark ? 'dark' : 'light');
+}
+function syncTheme() { applyTheme(themeName()); }
+syncTheme();
+function navBar(on) {
+  const bar = $('#navbar');
+  if (bar) bar.hidden = !on;
+}
+function place() {
+  return { home: !view && !cur && !editId, view: view || '', cur: cur || null, CK: CK || '', tab: tab, edit: editId || '' };
+}
+function markNav() {
+  if (SKIPNAV) return;
+  try { history.pushState(place(), ''); } catch (e) {}
+}
+function navBack() { try { history.back(); } catch (e) { navHome(); } }
+function navHome() {
+  editId = ''; cur = null; view = ''; CK = ''; CEDIT = false; RC = null; PAYING = '';
+  render();
+  window.scrollTo(0, 0);
+  try { history.pushState({ home: true, view: '', cur: null }, ''); } catch (e) {}
+}
+window.addEventListener('popstate', (ev) => {
+  const st = ev.state || { home: true };
+  SKIPNAV = true;
+  editId = st.edit || '';
+  cur = st.cur || null;
+  view = st.home ? '' : (st.view || '');
+  CK = st.CK || '';
+  CEDIT = false;
+  RC = null;
+  if (st.tab) tab = st.tab;
+  if (st.edit) {
+    const j = jobs.find((x) => x.id === st.edit);
+    if (j) { navBar(true); newq(j); SKIPNAV = false; return; }
+  }
+  render();
+  SKIPNAV = false;
+});
+try { history.replaceState({ home: true, view: '', cur: null }, ''); } catch (e) {}
+function formCfg() {
+  try { return SCCQuote.normalizeForm(SET && SET.form); } catch (e) { return SCCQuote.defaultForm(); }
+}
+function formMeta(id) {
+  try { return SCCQuote.formField(formCfg(), id); } catch (e) { return null; }
+}
+function formOn(id) {
+  const f = formMeta(id);
+  return !f || f.show !== false;
+}
+function fieldLabel(id, fallback) {
+  const f = formMeta(id);
+  return (f && f.label) || fallback;
+}
+function systemList() {
+  const names = formCfg().systems.map((s) => s.name).filter(Boolean);
+  return names.length ? names : SYSTEMS;
+}
+function prepNames() {
+  const names = formCfg().addons.map((a) => a.name).filter(Boolean);
+  return names.length ? names : PREP_OPTS;
+}
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const SYSTEMS = [
   'Garage floor flake system', 'Metallic epoxy', 'Solid color epoxy', 'Polyaspartic system',
@@ -48,6 +128,7 @@ async function refresh() {
     blocks = d.blocks || [];
     serverTest = typeof d.test === 'boolean' ? d.test : d.testMode;
     if (d.settings) SET = d.settings;
+    syncTheme();
     if (Array.isArray(d.gallery)) GALS = d.gallery;
     const bar = $('#testbar');
     if (bar) bar.hidden = !TEST_MODE && serverTest !== true;
@@ -206,6 +287,8 @@ function paint() {
     sessionStorage.sccRole = '';
     role = '';
   }
+  const sub = !!(role && (cur || view || editId));
+  navBar(sub);
   if (!role) {
     pin = '';
     A.innerHTML = setupCard() + `<div class="card" style="text-align:center"><img src="logo.png" alt="" style="width:170px;max-width:60%"><h2 style="margin-top:6px">Enter PIN</h2><div id="dots"></div><div class="pin">${[1, 2, 3, 4, 5, 6, 7, 8, 9, '⌫', 0, '✓'].map((k) => `<button type="button" onclick="key('${k}')">${k}</button>`).join('')}</div></div><p class="muted" style="text-align:center">Free estimates · Garage floors and commercial coatings<br>${esc(CO.phone)}</p>`;
@@ -217,6 +300,8 @@ function paint() {
   if (view === 'set') return setScreen();
   if (view === 'gal') return galScreen();
   if (view === 'fb') return feedbackScreen();
+  if (view === 'mile') return mileScreen();
+  if (view === 'sched') return sched();
   home();
 }
 function key(k) {
@@ -376,7 +461,10 @@ function sched() {
     }
   }
   const title = SV.mode === 'week' ? 'Week of ' + fmtD(ymd(SV.start)) : new Date(SV.start).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-  A.innerHTML = `<div class="card"><h2>Crew schedule</h2><div class="row"><button class="btn ${SV.mode === 'week' ? '' : 'gr'}" onclick="SV.mode='week';sched()">Week</button><button class="btn ${SV.mode === 'month' ? '' : 'gr'}" onclick="SV.mode='month';sched()">Month</button></div><button class="btn huge" onclick="blk('')">+ Block time</button><div class="row"><button class="btn n" onclick="mv(-1)">◀</button><button class="btn n" onclick="mv(1)">▶</button></div><h2 style="text-align:center">${title}</h2></div>${SV.mode === 'month' ? '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:14px">' + 'SMTWTFS'.split('').map((x) => `<b style="text-align:center">${x}</b>`).join('') + cells + '</div>' : cells}<button class="btn gr" onclick="render()">← All projects</button>`;
+  view = 'sched';
+  cur = null;
+  navBar(true);
+  A.innerHTML = `<div class="card"><h2>Crew schedule</h2><div class="row"><button class="btn ${SV.mode === 'week' ? '' : 'gr'}" onclick="SV.mode='week';sched()">Week</button><button class="btn ${SV.mode === 'month' ? '' : 'gr'}" onclick="SV.mode='month';sched()">Month</button></div><button class="btn huge" onclick="blk('')">+ Block time</button><div class="row"><button class="btn n" onclick="mv(-1)">◀</button><button class="btn n" onclick="mv(1)">▶</button></div><h2 style="text-align:center">${title}</h2></div>${SV.mode === 'month' ? '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:14px">' + 'SMTWTFS'.split('').map((x) => `<b style="text-align:center">${x}</b>`).join('') + cells + '</div>' : cells}`;
 }
 function mv(k) {
   const d = new Date(SV.start);
@@ -454,20 +542,40 @@ function home() {
     return r(a) - r(b) || (ts(b) < ts(a) ? -1 : 1);
   });
   if (!G[tab]) tab = 'est';
-  A.innerHTML = `<button class="btn huge" type="button" onclick="newq()">+ New quote</button>
+  const list = `<input id="find" type="search" placeholder="Search name, address or estimate #" value="${esc(SQ)}" autocomplete="off" oninput="SQ=this.value;hl()" style="margin-top:12px;font-size:16px">
+<div class="tabs" style="margin-top:12px">${['est', 'jobs', 'done'].map((k) => `<button type="button" class="${tab === k && !SQ.trim() ? 'on' : ''}" onclick="tab='${k}';SQ='';home()">${SECT[k]}<span class="cnt">${G[k].length}</span></button>`).join('')}</div>
+<div id="hl"></div>`;
+  if (themeName() === 'dark') {
+    const tiles = [
+      ['tile-quote', 'newq()', '✎', 'Quote'],
+      ['tile-jobs', "document.getElementById('hl')&&document.getElementById('hl').scrollIntoView({behavior:'smooth'})", '▣', 'Jobs'],
+      ['tile-cust', "go('cust')", '☺', 'Customers'],
+      ['tile-gal', "go('gal')", '▦', 'Gallery'],
+      ['tile-rc', "go('books')", '▤', 'Receipts'],
+      ['tile-mile', "go('mile')", '⌖', 'Mileage'],
+      ['tile-sched', "go('sched')", '◷', 'Schedule'],
+      ['tile-set', "go('set')", '⚙', 'Settings']
+    ];
+    A.innerHTML = `<div class="hbrand"><img src="logo.png" alt=""><div><b>Southern Concrete Coatings</b><small>Garage floors and commercial coatings</small></div></div>
+<div class="tiles">${tiles.map((t) => `<button class="tile" id="${t[0]}" type="button" onclick="${t[1]}"><i>${t[2]}</i><span>${t[3]}</span></button>`).join('')}</div>
+${list}
+<div class="row"><button class="btn gr" type="button" onclick="refresh().then(render)">↻ Refresh</button></div>
+<button class="btn n" id="fbhome" type="button" onclick="go('fb')">Feedback</button>`;
+  } else {
+    A.innerHTML = `<button class="btn huge" type="button" onclick="newq()">+ New quote</button>
 <div class="row"><button class="btn n nav" type="button" onclick="go('cust')">👥 Customers</button><button class="btn n nav" type="button" onclick="go('books')">📒 Bookkeeping</button></div>
 <button class="btn huge" type="button" onclick="go('gal')">Gallery</button>
-<input id="find" type="search" placeholder="Search name, address or estimate #" value="${esc(SQ)}" autocomplete="off" oninput="SQ=this.value;hl()" style="margin-top:12px;font-size:16px">
-<div class="tabs" style="margin-top:12px">${['est', 'jobs', 'done'].map((k) => `<button type="button" class="${tab === k && !SQ.trim() ? 'on' : ''}" onclick="tab='${k}';SQ='';home()">${SECT[k]}<span class="cnt">${G[k].length}</span></button>`).join('')}</div>
-<div id="hl"></div>
+${list}
 <div class="row"><button class="btn gr" type="button" onclick="refresh().then(render)">↻ Refresh</button><button class="btn gr" type="button" onclick="go('set')">⚙️ Settings</button></div>
-<button class="btn n" type="button" onclick="go('fb')">Feedback</button>`;
+<button class="btn n" type="button" onclick="go('mile')">Mileage</button>
+<button class="btn gr" type="button" onclick="go('sched')">Schedule</button>
+<button class="btn n" id="fbhome" type="button" onclick="go('fb')">Feedback</button>`;
+  }
   hl();
 }
 function homeBtn() { RC = null; view = ''; CK = ''; render(); window.scrollTo(0, 0); }
 function feedbackScreen() {
-  A.innerHTML = `<button class="btn gr" type="button" style="margin:0 0 12px" onclick="homeBtn()">← Home</button>
-<div class="card"><h2>Feedback</h2>
+  A.innerHTML = `<div class="card"><h2>Feedback</h2>
 <p class="muted">Tell us what to change.</p>
 <div class="talkbox"><textarea id="fbtext" rows="6" placeholder="What should we change?"></textarea><button class="talkmic" id="fbmic" type="button" aria-label="Microphone" aria-pressed="false">🎤</button></div>
 <p id="fbhint" class="muted">Tap the mic, or use the microphone on the keyboard.</p>
@@ -495,8 +603,9 @@ async function sendFeedback() {
 function go(v) {
   RC = null; view = v; cur = null; PAYING = '';
   if (v !== 'cust') CK = '';
-  try { api({ a: 'log', what: 'opened ' + ({ cust: 'Customers', books: 'Bookkeeping', set: 'Settings', gal: 'Gallery', fb: 'Feedback' }[v] || v), role: role, ua: '' }).catch(function () {}); } catch (e) {}
+  try { api({ a: 'log', what: 'opened ' + ({ cust: 'Customers', books: 'Bookkeeping', set: 'Settings', gal: 'Gallery', fb: 'Feedback', mile: 'Mileage', sched: 'Schedule' }[v] || v), role: role, ua: '' }).catch(function () {}); } catch (e) {}
   render();
+  markNav();
   window.scrollTo(0, 0);
 }
 
@@ -505,15 +614,14 @@ function gHits() {
 }
 function gqSet(v) { GQ = v; glist(); }
 function galScreen() {
-  A.innerHTML = `<button class="btn gr" type="button" onclick="homeBtn()">← Back</button><div class="card" style="margin-bottom:10px"><h2 style="margin-bottom:8px">Gallery</h2>
-<input id="gq" type="search" enterkeyhint="search" placeholder="Try gray flake garage floor or metallic blue" value="${esc(GQ)}" autocomplete="off" oninput="gqSet(this.value)" style="font-size:20px;padding:18px">
+  A.innerHTML = `<div class="card" style="margin-bottom:10px"><h2 style="margin-bottom:8px">Gallery</h2>
+<input id="gq" type="search" enterkeyhint="search" placeholder="Try gray flake garage floor" value="${esc(GQ)}" autocomplete="off" oninput="gqSet(this.value)" style="font-size:20px;padding:18px">
 <p class="muted" style="margin:10px 0 0">Photos: <a href="${esc(SCCGallery.simiron)}" target="_blank" rel="noopener">Simiron</a></p></div>
 <button class="btn huge" id="gshow" type="button" onclick="gshow()">Show photos</button>
 <button class="btn n" type="button" onclick="$('#gfile').click()">Upload a photo</button>
 <input id="gfile" type="file" accept="image/*" hidden onchange="gpick(this)">
 <div id="gform"></div>
-<div id="glist"></div>
-<button class="btn gr" type="button" onclick="homeBtn()">← All projects</button>`;
+<div id="glist"></div>`;
   glist();
   const q = $('#gq');
   if (q && GQ) { const n = q.value.length; try { q.focus(); q.setSelectionRange(n, n); } catch (e) {} }
@@ -527,7 +635,7 @@ function glist() {
     show.disabled = !hits.length;
     show.textContent = hits.length ? 'Show ' + hits.length + ' photo' + (hits.length === 1 ? '' : 's') : 'No matching photos';
   }
-  el.innerHTML = (hits.length ? '' : '<p class="muted" style="text-align:center;padding:18px">Nothing matches that. Try flake, metallic, quartz, or a color.</p>') +
+  el.innerHTML = (hits.length ? '' : '<p class="muted" style="text-align:center;padding:18px">Nothing matches that. Try flake, quartz, or a color.</p>') +
     '<div class="ggrid">' + hits.map((it, i) => `<button type="button" onclick="gopen(${i})"><img src="${esc(it.src)}" alt="${esc(it.name)}"><span>${esc(it.name)}</span></button>`).join('') + '</div>';
 }
 function gshow() { if (gHits().length) gopen(0); }
@@ -696,6 +804,35 @@ function fieldVals() {
     rate: $('#rate').value.trim()
   };
 }
+function onSystem() {
+  const name = $('#system') && $('#system').value;
+  const row = formCfg().systems.find((s) => s.name === name);
+  const rate = $('#rate');
+  if (row && row.rate && rate && !String(rate.value || '').trim()) rate.value = row.rate;
+  livePrice();
+}
+function customFieldsHtml(saved) {
+  saved = saved || {};
+  const skip = ['talk', 'name', 'address', 'email', 'phone', 'jobType', 'sqft', 'system', 'color', 'prep', 'cure', 'rate', 'hardness', 'photos', 'quote', 'addl', 'inote'];
+  return formCfg().fields.filter((f) => f.show !== false && skip.indexOf(f.id) < 0).map((f) => {
+    const id = 'cx-' + f.id;
+    const val = saved[f.id];
+    if (f.kind === 'check') return `<label class="checks" style="margin-top:12px"><span style="display:flex;gap:10px;align-items:center"><input type="checkbox" id="${esc(id)}" ${val ? 'checked' : ''}> ${esc(f.label)}</span></label>`;
+    if (f.kind === 'select') return `<label>${esc(f.label)}</label><select id="${esc(id)}"><option value=""></option>${(f.options || []).map((o) => `<option ${String(val || '') === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+    const mode = (f.kind === 'number' || f.kind === 'price') ? ' inputmode="decimal"' : '';
+    return `<label>${esc(f.label)}</label><input id="${esc(id)}"${mode} value="${esc(val || '')}">`;
+  }).join('');
+}
+function customPayload() {
+  const out = {};
+  formCfg().fields.forEach((f) => {
+    if (['talk', 'name', 'address', 'email', 'phone', 'jobType', 'sqft', 'system', 'color', 'prep', 'cure', 'rate', 'hardness', 'photos', 'quote', 'addl', 'inote'].includes(f.id)) return;
+    const el = document.getElementById('cx-' + f.id);
+    if (!el) return;
+    out[f.id] = el.type === 'checkbox' ? !!el.checked : String(el.value || '').slice(0, 400);
+  });
+  return out;
+}
 function livePrice() {
   const f = fieldVals();
   const sq = Number(f.sqft), rate = Number(String(f.rate).replace(/[$,]/g, ''));
@@ -777,8 +914,10 @@ function applyFill(f) {
   put('em', f.email);
   put('ad', f.address);
   put('sqft', f.sqft);
-  setChoice('system', f.system, SYSTEMS);
+  setChoice('system', f.system, systemList());
   put('color', f.color);
+  if (f.jobType) setChoice('jobtype', f.jobType, ['Residential', 'Commercial']);
+  if (f.hardness != null && String(f.hardness).trim() && $('#hard')) $('#hard').value = String(f.hardness);
   if (f.prep != null && String(f.prep).trim()) setPrep(f.prep);
   const cureText = String(f.cure || '').trim();
   const timeline = String(f.timeline || '').trim();
@@ -804,6 +943,10 @@ function localColor(raw) {
 }
 function localSystem(low) {
   const rules = [
+    [/acid\s*stain/, 'Acid Stain and Seal'],
+    [/grind and seal|grind & seal/, 'Grind and Seal'],
+    [/grind and prep only|grind & prep|prep only/, 'Grind and prep only'],
+    [/full\s+flake\s+broadcast|full[-\s]?broadcast/, 'Full Flake Broadcast System'],
     [/pool\s*deck/, 'Pool deck coating'],
     [/kitchen/, 'Commercial kitchen floor'],
     [/warehouse|industrial/, 'Warehouse / industrial floor'],
@@ -812,14 +955,35 @@ function localSystem(low) {
     [/polyurea/, 'Polyurea garage system'],
     [/metallic/, 'Metallic epoxy'],
     [/quartz/, 'Quartz broadcast'],
-    [/flake|vinyl\s*chip|chip\s*system|full[-\s]?broadcast/, 'Garage floor flake system'],
     [/solid(?:\s+color)?\s+epoxy|\bepoxy\b/, 'Solid color epoxy'],
     [/seal(?:er|ing)?/, 'Concrete sealing'],
-    [/grind|prep only/, 'Grind and prep only'],
     [/crack|spall/, 'Crack and spall repair']
   ];
   for (const [re, name] of rules) if (re.test(low)) return name;
+  if (/flake|vinyl\s*chip|chip\s*system/.test(low) && !/color flake|flake color|flake will be/.test(low)) return 'Garage floor flake system';
   return '';
+}
+const WORDN = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+function spokenRate(raw) {
+  const parsed = SCCQuote.parseRate(raw);
+  if (parsed != null) return parsed;
+  const low = String(raw || '').toLowerCase();
+  const at = low.search(/per\s+square\s+foot|price\s+per\s+square|a\s+square\s+foot|per\s+sq/);
+  if (at < 0) return null;
+  const chunk = low.slice(at).split(/\b(?:hardness|harness|mohs)\b/)[0];
+  const found = chunk.match(/\b(one|two|three|four|five|six|seven|eight|nine|ten|\d+(?:\.\d+)?)\b/g);
+  if (!found) return null;
+  const w = found[found.length - 1];
+  const n = WORDN[w] != null ? WORDN[w] : parseFloat(w);
+  return n > 0 && n < 10000 ? n : null;
+}
+function filledCount(f) {
+  let n = 0;
+  ['name', 'phone', 'email', 'address', 'sqft', 'jobType', 'system', 'color', 'prep', 'cure', 'rate', 'notes', 'hardness'].forEach((k) => {
+    if (f && f[k] != null && String(f[k]).trim() !== '') n++;
+  });
+  if (f && (f.extras || (f.items && f.items.length))) n++;
+  return n;
 }
 function localPrep(low) {
   const rules = [
@@ -857,8 +1021,15 @@ function localFillFields(text) {
   const raw = String(text || '').trim();
   const out = {};
   if (!raw || typeof SCCQuote === 'undefined') return out;
-  const sq = SCCQuote.parseSqft(raw);
-  const rate = SCCQuote.parseRate(raw);
+  let sq = SCCQuote.parseSqft(raw);
+  if (!sq) {
+    const m = raw.match(/\b(\d[\d,]*)\s*ft\b/i);
+    if (m) {
+      const n = parseFloat(m[1].replace(/,/g, ''));
+      if (n >= 40 && n < 1000000) sq = n;
+    }
+  }
+  const rate = spokenRate(raw);
   if (sq) out.sqft = String(sq);
   if (rate != null) out.rate = String(rate);
   const low = raw.toLowerCase();
@@ -868,8 +1039,18 @@ function localFillFields(text) {
   if (prep) out.prep = prep;
   const cure = localCure(low);
   if (cure) out.cure = cure;
-  const color = localColor(raw);
-  if (color) out.color = color;
+  if (/wolf\s*gr[ae]y/i.test(raw)) out.color = 'Wolf Gray';
+  else {
+    const color = localColor(raw);
+    if (color) out.color = color;
+  }
+  if (/commercial|warehouse|industrial/.test(low)) out.jobType = 'Commercial';
+  else if (/\bhouse\b|\bhome\b|residential/.test(low)) out.jobType = 'Residential';
+  const hard = low.match(/(?:hardnes+|harness|mohs)\D{0,24}(one|two|three|four|five|six|seven|eight|nine|ten|\d+)/);
+  if (hard) {
+    const n = WORDN[hard[1]] != null ? WORDN[hard[1]] : parseFloat(hard[1]);
+    if (n >= 1 && n <= 10 && n === Math.floor(n)) out.hardness = String(n);
+  }
   const addl = localAddl(raw);
   if (addl) out.notes = addl;
   const items = SCCQuote.rewriteQuote(raw);
@@ -885,16 +1066,21 @@ async function fillQuote() {
   if (btn) { btn.disabled = true; btn.textContent = 'Filling…'; }
   try {
     const r = await api({ a: 'qfill', pin: ownerPin(), text });
+    const use = (fields, n) => {
+      applyFill(fields);
+      const count = n || filledCount(fields);
+      show(count ? ('Filled ' + count + ' field' + (count === 1 ? '' : 's') + '. Change anything that is off.') : (r.message || 'AI fill not set up yet'));
+    };
     if (!r.ready) {
-      show(r.message || 'AI fill not set up yet');
-      applyFill(localFillFields(text));
+      use(localFillFields(text), 0);
       return;
     }
-    applyFill(r.fields || {});
-    show('Filled in. Change anything that is off.');
+    use(r.fields || {}, r.filled);
   } catch (e) {
-    show(e.message || 'Could not fill that in.');
-    applyFill(localFillFields(text));
+    const local = localFillFields(text);
+    applyFill(local);
+    const n = filledCount(local);
+    show(n ? ('Filled ' + n + ' field' + (n === 1 ? '' : 's') + '. Change anything that is off.') : (e.message || 'Could not fill that in.'));
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Fill in the quote'; }
   }
@@ -906,6 +1092,8 @@ function newq(pre) {
   photos = [];
   ACC = {};
   cur = null;
+  view = '';
+  navBar(true);
   if (pre && typeof pre === 'object') ACC.qc = true;
   A.innerHTML = `<div class="card">
 <label style="margin-top:0">Talk it through</label>
@@ -916,19 +1104,20 @@ function newq(pre) {
 <h2>${editing ? 'Edit quote' : 'New quote'}</h2>
 ${editing ? `<p class="muted" id="estkeep" style="margin-top:0">${esc(pre.est || 'Estimate')} stays this number.</p>` : ''}
 ${acc('qc', 'Customer details', 'Tap to enter name, address, email', `<label>Customer name</label><input id="nm" autocomplete="name" oninput="cs()"><label>Address</label><div style="position:relative"><input id="ad" autocomplete="off" autocapitalize="words" placeholder="Start typing the Tallahassee address" oninput="cs()"><div class="sug" id="adsug" hidden></div></div><label>Customer email</label><input id="em" type="email" inputmode="email" autocomplete="off" placeholder="Saved on the job" oninput="cs()"><label>Customer phone (optional)</label><input id="ph" type="tel" inputmode="tel" autocomplete="off" placeholder="For call and text from Customers" oninput="cs()">${TEST_MODE ? `<p class="muted">Test mode is on. This address is stored on the job. The estimate email goes only to ${esc(TEST_TO)}.</p>` : '<p class="muted">This email is where the estimate is sent.</p>'}`)}
-<label>Square footage</label><input id="sqft" inputmode="decimal" placeholder="480" oninput="livePrice()">
+${formOn('jobType') ? `<label>${esc(fieldLabel('jobType', 'Job type'))}</label><select id="jobtype"><option value="">Choose</option><option>Residential</option><option>Commercial</option></select>` : ''}
+${formOn('sqft') ? `<label>${esc(fieldLabel('sqft', 'Square footage'))}</label><input id="sqft" inputmode="decimal" placeholder="480" oninput="livePrice()">` : '<input id="sqft" hidden>'}
 <p id="ailabel" hidden style="font-weight:700;color:#9a3412;margin:8px 0 0">AI estimate, verify on site</p>
-<label>Known dimension (optional)</label><input id="known" autocomplete="off" placeholder="16 ft garage door">
 <input id="mf" type="file" accept="image/*" multiple hidden onchange="measurePhotos(this)">
 <button class="btn n" id="mbtn" type="button" onclick="$('#mf').click()">Measure from photo</button>
 <p id="ainote" class="muted" hidden></p>
-<label>Coating system</label><select id="system" onchange="livePrice()"><option value="">Choose a system</option>${SYSTEMS.map((s) => `<option>${esc(s)}</option>`).join('')}</select>
+${formOn('system') ? `<label>${esc(fieldLabel('system', 'Coating system'))}</label><select id="system" onchange="onSystem()"><option value="">Choose a system</option>${systemList().map((s) => `<option>${esc(s)}</option>`).join('')}</select>` : '<select id="system" hidden></select>'}
 <label>Color / flake</label><input id="color" placeholder="Dominion, Wolf Gray, custom blend">
-<label>Prep</label><div class="checks" id="prepbox">${PREP_OPTS.map((p) => `<label><input type="checkbox" value="${esc(p)}"> ${esc(p)}</label>`).join('')}</div>
+<label>Prep</label><div class="checks" id="prepbox">${prepNames().map((p) => `<label><input type="checkbox" value="${esc(p)}"> ${esc(p)}</label>`).join('')}</div>
 <label>Cure / return to service</label><select id="cure"><option value="">Choose</option>${CURES.map((s) => `<option>${esc(s)}</option>`).join('')}</select>
 <label>Price per sq ft</label><input id="rate" inputmode="decimal" placeholder="6.50" oninput="livePrice()">
 <p id="liveprice"></p>
 ${editing ? '<p class="muted">The line prices below are what get saved. Change a line if the square footage or rate changed.</p>' : ''}
+${customFieldsHtml(pre && pre.custom)}
 <label>Concrete hardness (Mohs 1–10)</label><select id="hard" onchange="hardHint()">${hardOpts('')}</select>
 <label>How it was measured (optional)</label><input id="hardhow" autocomplete="off" placeholder="Penny scratch on the garage apron">
 <p class="muted" id="hardhint"></p>
@@ -936,7 +1125,7 @@ ${editing ? '<p class="muted">The line prices below are what get saved. Change a
 <input type="file" id="pf" accept="image/*" capture="environment" multiple hidden onchange="pick(this,showP)"><button class="btn d" type="button" onclick="$('#pf').click()">📷 Take photo</button>
 ${acc('qp', 'Photo attachments (0)', 'No photos yet', '<div id="pp"></div>')}
 <label>Notes (talk or type)</label><textarea id="qt" rows="5" placeholder="480 sq ft two-car garage, full flake in Dominion, grind and crack repair, $6.50 a sq ft, back in 24 hours"></textarea>
-<label>Notes for customer</label><textarea id="addl" rows="4" placeholder="What the price includes, a gate code, or when to call."></textarea>
+<label>Notes for customer</label><div class="talkbox"><textarea id="addl" rows="4" placeholder="What the price includes, a gate code, or when to call."></textarea><button class="talkmic" id="addmic" type="button" aria-label="Microphone" aria-pressed="false">🎤</button></div>
 <p class="muted">Shown under the total on the estimate, PDF, invoice, and answer page, as Additional notes. Optional. Not a line and not a price.</p>
 <button class="btn mic" id="mb" type="button">🎤 Talk</button>
 ${editing ? '' : '<button class="btn huge d" type="button" onclick="prev()">Preview polished quote →</button>'}
@@ -944,6 +1133,8 @@ ${editing ? '' : '<button class="btn huge d" type="button" onclick="prev()">Prev
 <button class="btn gr" type="button" onclick="cancelQ()">Cancel</button></div>`;
   mic('mb', 'qt');
   bindSpeech('talkmic', 'talk', 'talkhint');
+  bindSpeech('addmic', 'addl', '');
+  if (!SKIPNAV) markNav();
   addrAC('ad', cs);
   livePrice();
   hardHint();
@@ -957,7 +1148,8 @@ ${editing ? '' : '<button class="btn huge d" type="button" onclick="prev()">Prev
   }
   if (editing) {
     $('#sqft').value = pre.sqft == null ? '' : pre.sqft;
-    setChoice('system', pre.system, SYSTEMS);
+    setChoice('system', pre.system, systemList());
+    if ($('#jobtype')) setChoice('jobtype', pre.jobType, ['Residential', 'Commercial']);
     $('#color').value = pre.color || '';
     setPrep(pre.prep);
     setChoice('cure', pre.cure, CURES);
@@ -1036,6 +1228,7 @@ async function sendQ() {
   const f = fieldVals();
   const d = {
     a: 'create', name: $('#nm').value.trim(), address: $('#ad').value.trim(), email: $('#em').value.trim(), phone: ($('#ph') ? $('#ph').value.trim() : ''),
+    jobType: ($('#jobtype') && $('#jobtype').value) || '', custom: customPayload(),
     quote: $('#qt').value, additionalNotes: ($('#addl') && $('#addl').value.trim()) || '', sqft: f.sqft, system: f.system, color: f.color, prep: f.prep, cure: f.cure, rate: f.rate,
     hardness: $('#hard') ? $('#hard').value : '', hardnessHow: $('#hardhow') ? $('#hardhow').value.trim() : '',
     items: IT.filter((i) => i.title && i.title.trim()), photos
@@ -1056,6 +1249,7 @@ async function saveEdit(send) {
   const d = {
     a: 'qedit', id, send: !!send,
     name: $('#nm').value.trim(), address: $('#ad').value.trim(), email: $('#em').value.trim(), phone: ($('#ph') ? $('#ph').value.trim() : ''),
+    jobType: ($('#jobtype') && $('#jobtype').value) || '', custom: customPayload(),
     quote: $('#qt').value, additionalNotes: ($('#addl') && $('#addl').value.trim()) || '', sqft: f.sqft, system: f.system, color: f.color, prep: f.prep, cure: f.cure, rate: f.rate,
     hardness: $('#hard') ? $('#hard').value : '', hardnessHow: $('#hardhow') ? $('#hardhow').value.trim() : '',
     items: IT.filter((i) => i.title && i.title.trim())
@@ -1152,10 +1346,11 @@ function notesPane(j) {
   const list = (j.internalNotes || []).slice().reverse();
   const rows = list.length ? list.map((n) => `<div class="line"><b>${esc(noteWhen(n.t))}</b><br>${esc(n.text)}</div>`).join('') : '<p class="muted">No internal notes yet.</p>';
   return `<div class="card"><h2>Internal notes</h2><p class="muted" style="margin-top:0">A running log for the crew. Customers never see these notes.</p>
-${rows}<label>Add a note</label><textarea id="inote" rows="4" placeholder="What should the next person know?"></textarea>
+${rows}<label>Add a note</label><div class="talkbox"><textarea id="inote" rows="4" placeholder="What should the next person know?"></textarea><button class="talkmic" id="inotemic" type="button" aria-label="Microphone" aria-pressed="false">🎤</button></div>
 <button class="btn huge" id="addnote" type="button" onclick="addNote('${j.id}')">Add note</button></div>`;
 }
 function jview(id) {
+  const push = !SKIPNAV && cur !== id;
   GAL = [];
   cur = id;
   const j = jobs.find((x) => x.id === id);
@@ -1179,12 +1374,13 @@ ${TEST_MODE ? `<p class="muted">Test mode: emails go only to ${esc(TEST_TO)}</p>
   h += jobTabs(j);
   if (jtab === 'notes') {
     h += notesPane(j);
-    h += `<button class="btn gr" type="button" onclick="cur=null;render()">${view === 'cust' ? '← Back to customer' : '← All projects'}</button>`;
     A.innerHTML = h;
+    bindSpeech('inotemic', 'inote', '');
+    if (push) markNav();
     return;
   }
   h += hardCard(j);
-  h += `<div class="card"><h2>Notes for customer</h2><p class="muted" style="margin-top:0">Shown under the total on the estimate, PDF, invoice, and answer page, as Additional notes. Not a line item and not a price. Hardness and the Notes tab stay off those pages.</p><textarea id="addl" rows="4" placeholder="Price includes a double topcoat. One topcoat lowers the price.">${esc(j.additionalNotes || '')}</textarea><button class="btn n" id="addlsave" type="button" onclick="saveAddl('${id}')">Save</button></div>`;
+  h += `<div class="card"><h2>Notes for customer</h2><p class="muted" style="margin-top:0">Shown under the total on the estimate, PDF, invoice, and answer page, as Additional notes. Not a line item and not a price. Hardness and the Notes tab stay off those pages.</p><div class="talkbox"><textarea id="addl" rows="4" placeholder="Price includes a double topcoat. One topcoat lowers the price.">${esc(j.additionalNotes || '')}</textarea><button class="talkmic" id="addmic" type="button" aria-label="Microphone" aria-pressed="false">🎤</button></div><button class="btn n" id="addlsave" type="button" onclick="saveAddl('${id}')">Save</button></div>`;
   h += acc(K('jd'), 'Job details', (j.est || 'Quote') + ' · ' + (j.email || 'no email'), `${j.est ? '<p class="muted">' + esc(j.est) + (j.pdf ? ` · <a href="${esc(j.pdf)}" target="_blank" rel="noopener">PDF</a>` : '') + '</p>' : ''}<p>📧 ${esc(j.email) || '<b style="color:#b91c1c">No email on job</b>'} <a href="#" onclick="fixEmail('${id}');return false">edit</a></p><p>📞 ${j.phone ? `<a href="tel:${telH(j.phone)}">${esc(fmtPh(j.phone))}</a>` : 'No phone'} <a href="#" onclick="editPhone(['${id}']);return false">${j.phone ? 'edit' : 'add'}</a></p>${j.response ? '<p><b>Customer answer:</b> ' + esc(j.response.label) + (j.response.text ? ' — ' + esc(j.response.text) : '') + '</p>' : ''}${av(j) ? '<p><b>Availability:</b> ' + esc(av(j)) + '</p>' : ''}${specHtml(j)}${j.notes ? '<p>' + esc(j.notes) + '</p>' : ''}${j.crewNotes ? '<p><b>Job notes:</b> ' + esc(j.crewNotes) + '</p>' : ''}${j.folder ? `<p><a href="${esc(j.folder)}" target="_blank" rel="noopener">Project photos in Drive</a></p>` : ''}`);
   h += acc(K('li'), 'Line items (' + li + ')', tot ? tot + ' total' : 'Scope and price', items(j));
   if (np && st !== 'approved') h += acc(K('ph'), 'Photos (' + np + ')', 'Quote ' + (j.photos || []).length + ' · Before/After ' + (j.crew || []).length, ((j.photos || []).length ? '<label>Quote photos</label>' + imgs(j.photos) : '') + ((j.crew || []).length ? '<label>Before / After</label>' + imgs(j.crew) : ''));
@@ -1205,10 +1401,11 @@ ${acc(K('jn'), 'Job notes', j.crewNotes ? esc(String(j.crewNotes).slice(0, 60)) 
 <button class="btn huge" id="invbtn" type="button" onclick="inv('${id}')">${j.invoice ? 'Resend invoice' : 'Send invoice'}</button>${payUI(j)}</div>${revCard(j)}`;
   }
   if ((st === 'approved' || st === 'complete' || st === 'invoiced') && j.est) h += `<div class="card">${resendBtn(j, false)}</div>`;
-  h += `<button class="btn gr" type="button" onclick="cur=null;render()">${view === 'cust' ? '← Back to customer' : '← All projects'}</button>`;
   A.innerHTML = h;
   hardHint();
+  bindSpeech('addmic', 'addl', '');
   if (st === 'approved') mic('cm', 'cn');
+  if (push) markNav();
 }
 async function saveAddl(id) {
   const b = $('#addlsave');
@@ -1393,7 +1590,7 @@ function custs() {
 function custScreen() {
   const cs = custs();
   if (CK) { const c = cs.find((x) => x.k === CK); if (c) return custDetail(c); CK = ''; }
-  A.innerHTML = `<button class="btn gr" type="button" style="margin:0 0 12px" onclick="homeBtn()">← Home</button><div class="card"><h2 style="margin-bottom:8px">Customers <span class="muted">(${cs.length})</span></h2>
+  A.innerHTML = `<div class="card"><h2 style="margin-bottom:8px">Customers <span class="muted">(${cs.length})</span></h2>
 <input id="cq" type="search" placeholder="Search name, phone, email or address" value="${esc(CQ)}" autocomplete="off" oninput="CQ=this.value;custList()" style="font-size:16px"></div><div id="cl"></div>`;
   custList();
 }
@@ -1405,20 +1602,52 @@ function custList() {
   el.innerHTML = (CL.length ? '' : `<p class="muted" style="text-align:center;padding:20px">${q ? 'No matches. Try a name, phone number, email or address.' : 'No customers yet. They appear here automatically when you send a quote.'}</p>`) +
     CL.map((c, i) => `<button class="job" type="button" onclick="openC(${i})"><span class="t">${c.billed ? m0(c.billed) : ''}</span><b>${esc(c.name)}</b><div class="a">${esc([c.phone ? fmtPh(c.phone) : '', c.email].filter(Boolean).join(' · ') || c.addrs[0] || '')}</div><span class="badge" style="background:#3a415c">${c.n} job${c.n === 1 ? '' : 's'}</span>${c.owed > 0 ? ` <span class="badge" style="background:#9a3412">Owes ${m0(c.owed)}</span>` : ''}</button>`).join('');
 }
-function openC(i) { CK = CL[i].k; render(); window.scrollTo(0, 0); }
+function openC(i) { CK = CL[i].k; CEDIT = false; render(); markNav(); window.scrollTo(0, 0); }
 function custDetail(c) {
   const t = telH(c.phone);
-  A.innerHTML = `<button class="btn gr" type="button" style="margin:0 0 12px" onclick="CK='';render()">← All customers</button>
-<div class="card"><h2 style="margin-bottom:6px">${esc(c.name)}</h2>
+  const sample = c.jobs[0] || {};
+  A.innerHTML = `<div class="card"><h2 style="margin-bottom:6px">${esc(c.name)}</h2>
 ${c.addrs.map((a) => `<p style="margin:0 0 6px;font-size:16px">📍 <a href="https://maps.google.com/?q=${encodeURIComponent(a)}" target="_blank" rel="noopener">${esc(a)}</a></p>`).join('')}
 <p class="muted" style="margin:6px 0 0">📧 ${esc(c.email) || '<b style="color:#b42318">No email</b>'}</p>
 <p class="muted" style="margin:6px 0 0">📞 ${c.phone ? esc(fmtPh(c.phone)) : 'No phone yet'} <a href="#" onclick="editPhone(CK_ids());return false">${c.phone ? 'edit' : 'add'}</a></p>
-<div class="row">${c.phone ? `<a class="btn d sm" href="tel:${t}">Call</a><a class="btn d sm" href="sms:${t}">Text</a>` : ''}${c.email ? `<a class="btn d sm" href="mailto:${esc(c.email)}">Email</a>` : ''}</div></div>
+<div class="row">${c.phone ? `<a class="btn d sm" href="tel:${t}">Call</a><a class="btn d sm" href="sms:${t}">Text</a>` : ''}${c.email ? `<a class="btn d sm" href="mailto:${esc(c.email)}">Email</a>` : ''}</div>
+<button class="btn n" type="button" onclick="CEDIT=!CEDIT;render()">Edit customer</button></div>
+${CEDIT ? `<div class="card" id="cedit"><h2>Edit customer</h2><p class="muted" style="margin-top:0">This updates every job linked to this customer.</p>
+<label>Name</label><input id="cnm" autocomplete="name" value="${esc(c.name)}">
+<label>Phone</label><input id="cph" type="tel" value="${esc(c.phone || '')}">
+<label>Email</label><input id="cem" type="email" value="${esc(c.email || '')}">
+<label>Address</label><input id="cad" value="${esc(c.addrs[0] || sample.address || '')}">
+<div class="acc" id="acc-cadv"><button type="button" class="acch" onclick="tg('cadv')"><span><b>Advanced</b><small>Secondary phone and contact</small></span><i>▾</i></button><div class="accb">
+<label>Secondary phone</label><input id="cph2" type="tel" value="${esc(sample.phone2 || '')}">
+<label>Secondary contact name</label><input id="cct2" value="${esc(sample.contact2 || '')}">
+<p class="muted">Internal only. These stay off customer emails and PDFs.</p>
+</div></div>
+<button class="btn huge" id="csave" type="button" onclick="saveCust()">Save customer</button></div>` : ''}
 <button class="btn huge" type="button" onclick="newqFor()">+ New quote for ${esc(c.name.split(' ')[0])}</button>
 <div class="card" style="margin-top:12px"><h2>Totals</h2><div class="kv"><span>Quoted</span><b>${m0(c.quoted)}</b></div><div class="kv"><span>Invoiced</span><b>${m0(c.billed)}</b></div><div class="kv"><span>Paid</span><b style="color:#2f6b4f">${m0(c.paid)}</b></div><div class="kv"><span>Still owed</span><b style="color:${c.owed > 0 ? '#9a3412' : 'inherit'}">${m0(c.owed)}</b></div></div>
 <div class="card"><h2>Job history (${c.n})</h2>${c.jobs.map((j) => `<button class="job" type="button" onclick="jview('${j.id}')"><span class="t">${j.total != null ? SCCQuote.money(j.total) : ''}</span><b>${esc(j.address)}</b><div class="a">${j.est ? esc(j.est) + ' · ' : ''}${esc(longD(etD(j.created)))}</div><span class="badge" style="background:${SC[stat(j)] || '#8a8f98'}">${ST[stat(j)] || esc(j.status)}</span></button>`).join('')}</div>`;
 }
 function CK_ids() { const c = custs().find((x) => x.k === CK); return c ? c.jobs.map((j) => j.id) : []; }
+async function saveCust() {
+  const c = custs().find((x) => x.k === CK);
+  if (!c) return;
+  const b = $('#csave');
+  if (b) { b.disabled = true; b.textContent = 'Saving…'; }
+  try {
+    await api({
+      a: 'cedit', pin: ownerPin(), ids: c.jobs.map((j) => j.id),
+      name: $('#cnm').value.trim(), phone: $('#cph').value.trim(), email: $('#cem').value.trim(), address: $('#cad').value.trim(),
+      phone2: $('#cph2') ? $('#cph2').value.trim() : '', contact2: $('#cct2') ? $('#cct2').value.trim() : ''
+    });
+    CEDIT = false;
+    await refresh();
+    toast('Customer saved');
+    render();
+  } catch (e) {
+    toast(e.message);
+    if (b) { b.disabled = false; b.textContent = 'Save customer'; }
+  }
+}
 function newqFor() {
   const c = custs().find((x) => x.k === CK);
   if (!c) return;
@@ -1450,8 +1679,7 @@ function bookScreen() {
   const yrs = [...new Set([...jobs.filter((j) => j.invoice).map((j) => (etD(j.invoice.at) || '').slice(0, 4)), ...EXP.map((e) => String(e.date).slice(0, 4)), todayET().slice(0, 4)].filter(Boolean))].sort().reverse();
   const rec = [...EXP].sort((a, b) => (String(b.date) < String(a.date) ? -1 : (String(b.date) > String(a.date) ? 1 : ((b.created || '') < (a.created || '') ? -1 : 1)))).slice(0, 15);
   const now = Date.now();
-  A.innerHTML = `<button class="btn gr" type="button" style="margin:0 0 12px" onclick="homeBtn()">← Home</button>
-<input type="file" id="rf" accept="image/*" capture="environment" hidden onchange="scanR(this)"><button class="btn huge" type="button" style="margin:0 0 6px" onclick="$('#rf').click()">Scan receipt</button>
+  A.innerHTML = `<input type="file" id="rf" accept="image/*" capture="environment" hidden onchange="scanR(this)"><button class="btn huge" type="button" style="margin:0 0 6px" onclick="$('#rf').click()">Scan receipt</button>
 <p class="muted" style="text-align:center;margin:0 0 16px">${SET.ocr ? 'Snap a receipt and the amounts will be read for you.' : 'Snap a receipt and save it with the expense. Automatic reading is not turned on yet.'}</p>
 <div class="card"><h2>Bookkeeping</h2><div class="kv"><span>Collected in ${esc(monLbl(S.cm))}</span><b style="color:#2f6b4f">${m0(S.colM)}</b></div><div class="kv"><span>Collected this year</span><b>${m0(S.colY)}</b></div>
 <div class="kv"><span>Unpaid invoices (${S.outN})</span><b style="color:${S.out > 0 ? '#9a3412' : 'inherit'}">${m0(S.out)}</b></div><div class="kv"><span>Expenses this month</span><b>${m0(S.expM)}</b></div><div class="kv"><span>Expenses this year</span><b>${m0(S.expY)}</b></div>
@@ -1540,8 +1768,7 @@ function renderQ() {
   el.innerHTML = RQ.map((j) => {
     const t = j.tok;
     if (j.phase === 'scan') return `<div class="rqi"><div class="spin sm"></div><span style="flex:1">Scanning receipt…</span><button class="x" type="button" onclick="rqCancel(${t})" aria-label="Cancel scan">✕</button></div>`;
-    if (j.phase === 'ready') return `<div class="rqi ok" onclick="rcOpen(${t})"><span style="flex:1">${j.ocr ? 'Receipt ready. Tap to review' : 'Receipt saved. Tap to add details'}</span><b>›</b></div>`;
-    return `<div class="rqi bad"><span style="flex:1;min-width:150px">Could not read that receipt</span><button type="button" onclick="rcRetry(${t})">Try again</button><button type="button" onclick="rcHand(${t})">Enter by hand</button></div>`;
+    return `<div class="rqi ok" onclick="rcOpen(${t})"><span style="flex:1">${j.ocr ? 'Receipt ready. Tap to review' : 'Receipt saved. Tap to add details'}</span><b>›</b></div>`;
   }).join('');
 }
 function rqCancel(t) { const j = rqGet(t); if (!j) return; j.dead = true; rqDel(j); rcDropJob(j); }
@@ -1553,17 +1780,20 @@ async function rcRun(j) {
   try {
     const r = j.id ? await api({ a: 'rcrescan', pin: ownerPin(), id: j.id }) : await api({ a: 'rcscan', pin: ownerPin(), image: j.img });
     if (j.dead) { if (r.receiptId) api({ a: 'rcdrop', pin: ownerPin(), id: r.receiptId }).catch(function () {}); return; }
-    Object.assign(j, { id: r.receiptId || j.id, ocr: !!r.ocr, data: r.data || {}, reason: r.reason || '', offline: false });
-    j.phase = (r.ocr || r.reason === 'none') ? 'ready' : 'failed';
+    Object.assign(j, { id: r.receiptId || j.id, ocr: !!r.ocr, data: r.data || {}, reason: r.reason || '', offline: false, phase: 'ready' });
     if (j.id) delete j.img;
   } catch (e) {
     if (j.dead) return;
-    Object.assign(j, { phase: 'failed', ocr: false, data: {}, reason: e.message || '', offline: !j.id });
+    Object.assign(j, { phase: 'ready', ocr: false, data: {}, reason: 'miss', offline: !j.id });
   }
   rqSave();
   renderQ();
-  if (j.phase === 'ready') toast(j.ocr ? 'Receipt ready. Tap the banner to review.' : 'Receipt saved. Tap the banner to add details.');
-  else toast('Could not read the receipt. Use the banner at the top.');
+  if (j.ocr) toast('Receipt ready. Tap the banner to review.');
+}
+function rcMissNote(j) {
+  if (j && j.ocr) return '<p class="muted" style="margin:0 0 4px">Read automatically. Check the details and fix anything that looks off.</p>';
+  if (j && j.reason === 'none') return '<p class="muted" style="margin:0 0 4px">Automatic reading is off. Type the details below.</p>';
+  return '<p class="muted" style="margin:0 0 4px">Could not read that receipt. Type the details below.</p>';
 }
 function rcCancel() { const j = RC; if (j) { rqDel(j); rcDropJob(j); } RC = null; bookScreen(); window.scrollTo(0, 0); }
 async function scanR(inp) {
@@ -1589,8 +1819,7 @@ function rcScreen() {
     return;
   }
   const d = RC.data || {}, items = d.items || [];
-  const note = RC.ocr ? '<p class="muted" style="margin:0 0 4px">Read automatically. Check the details and fix anything that looks off.</p>' : `<p style="margin:0 0 4px;background:#fff6e5;border-radius:12px;padding:12px;color:#7a5b00;font-size:15px">${RC.reason === 'none' ? 'Automatic reading is not turned on yet, so fill in the details below.' : 'This one could not be read automatically, so fill in the details below.'}${RC.offline ? ' The photo could not be uploaded, but you can still save the expense.' : ''}</p>`;
-  A.innerHTML = `<button class="btn gr" type="button" style="margin:0 0 12px" onclick="go('books')">← Bookkeeping</button><div class="card"><h2>Check this receipt</h2><img class="rpv" alt="" src="${RC.prev || ''}" style="max-height:200px;margin-bottom:12px">${note}
+  A.innerHTML = `<div class="card"><h2>Check this receipt</h2><img class="rpv" alt="" src="${RC.prev || ''}" style="max-height:200px;margin-bottom:12px">${rcMissNote(RC)}
 <label>Vendor</label><input id="rv" autocomplete="off" value="${esc(d.vendor || '')}">
 <div class="row"><div><label>Total</label><input id="rt" inputmode="decimal" placeholder="$0.00" value="${d.total != null ? d.total : ''}"></div><div><label>Tax</label><input id="rx" inputmode="decimal" placeholder="$0.00" value="${d.tax != null ? d.tax : ''}"></div></div>
 <label>Date</label><input id="rd" type="date" value="${esc(d.date || todayET())}">
@@ -1651,11 +1880,98 @@ function tgSet(id) {
 function srow(id, title, body) {
   return `<div class="srow" id="srow-${id}"><button type="button" class="srowh" aria-expanded="false" onclick="tgSet('${id}')"><span><b>${title}</b><small id="ssum-${id}"></small></span><i aria-hidden="true">›</i></button><div class="srowb">${body}</div></div>`;
 }
+function appearanceRow() {
+  const cur = themeName();
+  return srow('look', 'Appearance', `<p class="muted" style="margin:0 0 8px">Modern dark is the dashboard. Classic keeps the light screens.</p>
+<label class="checks" style="margin-top:8px"><span style="display:flex;gap:10px;align-items:center"><input type="radio" name="theme" value="dark" ${cur === 'dark' ? 'checked' : ''} onchange="pickTheme('dark')"> Modern dark</span></label>
+<label class="checks"><span style="display:flex;gap:10px;align-items:center"><input type="radio" name="theme" value="classic" ${cur === 'classic' ? 'checked' : ''} onchange="pickTheme('classic')"> Classic</span></label>`);
+}
+function formEditorHtml() {
+  if (!FORM) FORM = JSON.parse(JSON.stringify(formCfg()));
+  const systems = FORM.systems.map((s, i) => `<div class="line"><input value="${esc(s.name)}" oninput="FORM.systems[${i}].name=this.value" placeholder="System name"><input inputmode="decimal" value="${esc(s.rate || '')}" oninput="FORM.systems[${i}].rate=this.value" placeholder="Default $ / sq ft"><button class="btn gr sm" type="button" onclick="FORM.systems.splice(${i},1);setScreen()">Remove</button></div>`).join('');
+  const fields = FORM.fields.map((f, i) => `<div class="line"><label style="display:flex;gap:8px;align-items:center;margin:0"><input type="checkbox" ${f.show !== false ? 'checked' : ''} ${f.lock ? 'disabled' : ''} onchange="FORM.fields[${i}].show=this.checked"> Show</label>
+<input value="${esc(f.label)}" oninput="FORM.fields[${i}].label=this.value">
+<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" ${f.customer ? 'checked' : ''} ${f.lock ? 'disabled' : ''} onchange="FORM.fields[${i}].customer=this.checked"> Customer sees this</label>
+<div class="row"><button class="btn gr sm" type="button" onclick="moveField(${i},-1)">Up</button><button class="btn gr sm" type="button" onclick="moveField(${i},1)">Down</button></div></div>`).join('');
+  return `<p class="muted" style="margin:0 0 8px">Show, rename, and reorder the quote. Hardness and internal notes stay internal.</p>
+<h2 style="font-size:18px">Coating systems</h2>${systems}
+<button class="btn gr" type="button" onclick="FORM.systems.push({name:'',rate:''});setScreen()">Add system</button>
+<h2 style="font-size:18px">Fields</h2>${fields}
+<label>New field label</label><input id="nfname" placeholder="Gate code">
+<label>Kind</label><select id="nfkind"><option value="text">Text</option><option value="number">Number</option><option value="select">Dropdown</option><option value="check">Checkbox</option><option value="price">Price</option></select>
+<label>Dropdown choices, separated by commas</label><input id="nfopts" placeholder="Only for a dropdown">
+<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="nfcust"> Customer sees this</label>
+<button class="btn n" type="button" onclick="addFormField()">Add field</button>
+<button class="btn gr" type="button" onclick="resetForm()">Reset to default</button>`;
+}
+function moveField(i, d) {
+  const j = i + d;
+  if (!FORM || j < 0 || j >= FORM.fields.length) return;
+  const row = FORM.fields.splice(i, 1)[0];
+  FORM.fields.splice(j, 0, row);
+  setScreen();
+}
+function addFormField() {
+  if (!FORM) FORM = JSON.parse(JSON.stringify(formCfg()));
+  const label = ($('#nfname') && $('#nfname').value.trim()) || '';
+  if (!label) return toast('Name the field');
+  const kind = ($('#nfkind') && $('#nfkind').value) || 'text';
+  const id = 'c' + Date.now().toString(36);
+  const options = kind === 'select' ? String($('#nfopts') && $('#nfopts').value || '').split(',').map((s) => s.trim()).filter(Boolean) : [];
+  FORM.fields.push({ id, label, kind, show: true, customer: !!($('#nfcust') && $('#nfcust').checked), lock: false, options, price: '' });
+  setScreen();
+}
+function resetForm() {
+  FORM = SCCQuote.defaultForm();
+  setScreen();
+}
+function qboRow() {
+  const q = (SET && SET.qbo) || {};
+  return srow('qbo', 'QuickBooks', `<p class="muted" style="margin:0 0 8px">${q.connected ? 'Connected' : 'Not connected'} · ${esc(q.env || 'sandbox')}</p>
+<p class="muted">Customers, estimates, invoices, and receipt expenses sync when QuickBooks is connected. The redirect address is the Apps Script /exec URL.</p>
+<button class="btn n" type="button" onclick="qboConnect()">Connect QuickBooks</button>
+<button class="btn gr" type="button" onclick="qboOff()">Disconnect</button>`);
+}
+async function qboConnect() {
+  try {
+    const r = await api({ a: 'qboconnect', pin: ownerPin() });
+    if (r.url) location.href = r.url;
+  } catch (e) { toast(e.message); }
+}
+async function qboOff() {
+  try {
+    const r = await api({ a: 'qbodisconnect', pin: ownerPin() });
+    if (r.settings) SET = r.settings;
+    toast('QuickBooks disconnected');
+    setScreen();
+  } catch (e) { toast(e.message); }
+}
+function setPayload() {
+  return {
+    a: 'settings', pin: ownerPin(),
+    payLink: $('#sp') ? $('#sp').value.trim() : ((SET && SET.payLink) || ''),
+    reviewLink: $('#sr') ? $('#sr').value.trim() : ((SET && SET.reviewLink) || ''),
+    finLink: $('#sf') ? $('#sf').value.trim() : ((SET && SET.finLink) || ''),
+    finMin: $('#sm') ? $('#sm').value : (SET && SET.finMin != null ? SET.finMin : 1000),
+    quoteSubject: $('#qsub') ? $('#qsub').value.trim() : ((SET && SET.quoteSubject) || ''),
+    quoteBody: $('#qbody') ? $('#qbody').value.trim() : ((SET && SET.quoteBody) || ''),
+    quoteSign: $('#qsign') ? $('#qsign').value.trim() : ((SET && SET.quoteSign) || ''),
+    theme: themeName(),
+    mileRate: $('#mrate') ? $('#mrate').value : (SET && SET.mileRate != null ? SET.mileRate : 0.7),
+    form: FORM || formCfg()
+  };
+}
+function pickTheme(name) {
+  localStorage.sccTheme = name === 'classic' ? 'classic' : 'dark';
+  applyTheme(localStorage.sccTheme);
+  saveSet(true);
+}
 function setScreen() {
   const S = SET || {};
-  A.innerHTML = `<button class="btn gr" type="button" style="margin:0 0 12px" onclick="homeBtn()">← Home</button>
-<h2 style="margin:0 0 4px">Settings</h2>
+  if (!FORM) FORM = JSON.parse(JSON.stringify(formCfg()));
+  A.innerHTML = `<h2 style="margin:0 0 4px">Settings</h2>
 <p class="muted" style="margin:0 0 12px">Links customers see in their emails. Leave a box empty to hide that button.</p>
+${appearanceRow()}
 ${srow('pay', 'Payments', `<label>Payment link (Stripe, Square or PayPal)</label><input id="sp" type="url" inputmode="url" autocomplete="off" autocapitalize="off" placeholder="https://..." value="${esc(S.payLink || '')}" oninput="setSumText()">
 <p class="muted" style="margin:6px 0 0">Adds a Pay now button to quote and invoice emails. Create a payment link in Stripe, Square or PayPal and paste it here.</p>`)}
 ${srow('rev', 'Reviews', `<label>Google review link</label><input id="sr" type="url" inputmode="url" autocomplete="off" autocapitalize="off" placeholder="https://g.page/r/.../review" value="${esc(S.reviewLink || '')}" oninput="setSumText()">
@@ -1669,6 +1985,9 @@ ${srow('mail', 'Customer email', `<p class="muted" style="margin:0 0 8px">This w
 <label>Sign-off</label><textarea id="qsign" rows="3" oninput="setSumText()">${esc(S.quoteSign || SCCQuote.QUOTE_EMAIL_SIGN)}</textarea>
 <p class="muted">Line breaks stay. {name}, {estimate}, and {address} fill in for that customer.</p>
 <button class="btn gr" id="qreset" type="button" onclick="resetEmailCopy()">Reset to default</button>`)}
+${srow('form', 'Quote form', formEditorHtml())}
+${srow('mile', 'Mileage rate', `<label>IRS rate per mile ($)</label><input id="mrate" inputmode="decimal" value="${esc(S.mileRate == null ? 0.7 : S.mileRate)}"><p class="muted">Used for the mileage deduction total.</p>`)}
+${qboRow()}
 <button class="btn huge" id="ss" type="button" onclick="saveSet()">Save settings</button>`;
   setSumText();
 }
@@ -1678,24 +1997,76 @@ function resetEmailCopy() {
   if ($('#qsign')) $('#qsign').value = SCCQuote.QUOTE_EMAIL_SIGN;
   saveSet();
 }
-async function saveSet() {
+async function saveSet(quiet) {
   const b = $('#ss');
-  b.disabled = true;
-  b.textContent = 'Saving…';
+  if (b) { b.disabled = true; b.textContent = 'Saving…'; }
+  try {
+    const r = await api(setPayload());
+    SET = r.settings || SET;
+    FORM = null;
+    if (!quiet) toast('Settings saved');
+    if (b) { b.disabled = false; b.textContent = 'Save settings'; }
+    if (view === 'set') setScreen();
+  } catch (e) {
+    if (!quiet) toast(e.message);
+    if (b) { b.disabled = false; b.textContent = 'Save settings'; }
+  }
+}
+function mileMiles(t) {
+  const start = Number(t.start), end = Number(t.end), direct = Number(t.miles);
+  if (direct > 0) return direct;
+  if (end > start && start >= 0) return Math.round((end - start) * 10) / 10;
+  return 0;
+}
+function mileScreen() {
+  if (!MREADY && !MLOAD) {
+    MLOAD = true;
+    api({ a: 'milelist', pin: ownerPin() }).then((r) => { MILES = r.trips || []; if (r.mileRate != null) SET.mileRate = r.mileRate; MREADY = true; MLOAD = false; if (view === 'mile') mileScreen(); }).catch((e) => { MLOAD = false; toast(e.message); });
+  }
+  const rate = Number(SET.mileRate == null ? 0.7 : SET.mileRate) || 0.7;
+  const cm = todayET().slice(0, 7), cy = todayET().slice(0, 4);
+  let mM = 0, mY = 0;
+  MILES.forEach((t) => { const n = mileMiles(t); if (String(t.date).slice(0, 7) === cm) mM += n; if (String(t.date).slice(0, 4) === cy) mY += n; });
+  const opts = jobs.map((j) => `<option value="${esc(j.id)}">${esc(j.name)} · ${esc(j.address || '')}</option>`).join('');
+  A.innerHTML = `<div class="card"><h2>Mileage</h2>
+<div class="kv"><span>This month</span><b>${mM.toFixed(1)} mi · ${m0(mM * rate)}</b></div>
+<div class="kv"><span>This year</span><b>${mY.toFixed(1)} mi · ${m0(mY * rate)}</b></div>
+<p class="muted" style="margin:8px 0 0">Deduction uses $${rate.toFixed(2)} per mile.</p></div>
+<div class="card"><h2>Add a trip</h2>
+<label>Date</label><input id="mdate" type="date" value="${todayET()}">
+<label>Job</label><select id="mjob"><option value="">No job</option>${opts}</select>
+<label>Odometer start</label><input id="mstart" inputmode="decimal">
+<label>Odometer end</label><input id="mend" inputmode="decimal">
+<label>Miles, if you are not using the odometer</label><input id="mmiles" inputmode="decimal">
+<label>Purpose</label><input id="mpurpose" placeholder="Site visit">
+<label>Notes</label><textarea id="mnotes" rows="3"></textarea>
+<button class="btn huge" id="msave" type="button" onclick="addMile()">Save trip</button></div>
+<div class="card"><h2>Trips</h2>${MILES.length ? MILES.map((t) => `<div class="line"><b>${esc(usD(t.date))}</b> · ${mileMiles(t).toFixed(1)} mi<br><span>${esc(t.customer || t.purpose || 'Trip')}</span><br><a href="#" onclick="delMile('${esc(t.id)}');return false">Remove</a></div>`).join('') : '<p class="muted">No trips yet.</p>'}
+<button class="btn n" type="button" onclick="mileCsv()">Export CSV</button></div>`;
+}
+async function addMile() {
+  const job = jobs.find((j) => j.id === ($('#mjob') && $('#mjob').value));
+  const b = $('#msave');
+  if (b) { b.disabled = true; b.textContent = 'Saving…'; }
   try {
     const r = await api({
-      a: 'settings', pin: ownerPin(),
-      payLink: $('#sp').value.trim(), reviewLink: $('#sr').value.trim(), finLink: $('#sf').value.trim(), finMin: $('#sm').value,
-      quoteSubject: $('#qsub') ? $('#qsub').value.trim() : '',
-      quoteBody: $('#qbody') ? $('#qbody').value.trim() : '',
-      quoteSign: $('#qsign') ? $('#qsign').value.trim() : ''
+      a: 'mileadd', pin: ownerPin(), date: $('#mdate').value, jobId: job ? job.id : '', customer: job ? job.name : '',
+      start: $('#mstart').value, end: $('#mend').value, miles: $('#mmiles').value, purpose: $('#mpurpose').value, notes: $('#mnotes').value
     });
-    SET = r.settings || SET;
-    toast('Settings saved');
-    b.disabled = false;
-    b.textContent = 'Save settings';
-    setScreen();
-  } catch (e) { toast(e.message); b.disabled = false; b.textContent = 'Save settings'; }
+    MILES = r.trips || [];
+    MREADY = true;
+    toast('Trip saved');
+    mileScreen();
+  } catch (e) { toast(e.message); if (b) { b.disabled = false; b.textContent = 'Save trip'; } }
+}
+async function delMile(id) {
+  try { const r = await api({ a: 'miledel', pin: ownerPin(), id }); MILES = r.trips || []; mileScreen(); }
+  catch (e) { toast(e.message); }
+}
+function mileCsv() {
+  const rows = ['Date,Job,Start,End,Miles,Purpose,Notes'];
+  MILES.forEach((t) => rows.push([t.date, t.customer, t.start, t.end, mileMiles(t), t.purpose, t.notes].map(csvT).join(',')));
+  dlCsv('southern-concrete-mileage-' + todayET() + '.csv', rows.join('\r\n') + '\r\n');
 }
 
 if (role) refresh().then(render);

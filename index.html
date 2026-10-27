@@ -19,7 +19,14 @@
 }
 *{box-sizing:border-box}
 body{margin:0;font-family:Arial,Helvetica,sans-serif;color:var(--c);background:var(--bg)}
-header{background:var(--n);color:#fff;padding:12px 18px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:5}
+#topstick{position:sticky;top:0;z-index:8}
+header{background:var(--n);color:#fff;padding:12px 18px;display:flex;align-items:center;gap:12px;position:static}
+#navbar{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#fff;border-bottom:1px solid var(--line);padding:8px 12px}
+#navbar[hidden]{display:none}
+#navbar button{font:inherit;font-weight:700;font-size:16px;border:0;border-radius:10px;padding:10px 14px;background:#eef0f4;color:var(--n);cursor:pointer}
+#navbar #navhome{margin-left:auto}
+.gvbar{display:flex;justify-content:space-between;gap:8px;margin:0 0 8px}
+.gvbar button{font:inherit;font-weight:700;font-size:16px;border:0;border-radius:10px;padding:10px 14px;background:#eef0f4;color:var(--n);cursor:pointer}
 header img{height:48px;width:auto;max-width:42vw;object-fit:contain;object-position:left center;background:#fff;border-radius:8px;padding:2px}
 header b{font-size:18px;line-height:1.15;display:block}
 header button{margin-left:auto;background:transparent;border:1px solid #c5cad8;color:#fff;border-radius:10px;padding:9px 14px;font-size:14px}
@@ -114,20 +121,59 @@ a{color:var(--dg)}
 #gv[hidden]{display:none}
 #gv img{flex:1;min-height:0;width:100%;object-fit:contain;background:#fff;border-radius:16px}
 #gv h2{margin:10px 0 0;font-size:24px}
+.hbrand{display:none}
+.tiles{display:none}
+[data-theme="dark"]{color-scheme:dark;--n:#e8edf8;--g:#8ea2d6;--dg:#c9d4ef;--c:#f4f6f8;--bg:#1e2126;--line:#3c4354;--gold:#3a3420}
+[data-theme="dark"] body{font-family:"Segoe UI",Helvetica,Arial,sans-serif;background:#1e2126;color:#f4f6f8}
+[data-theme="dark"] header{background:#23262c;border-bottom:1px solid #343a46;box-shadow:0 8px 24px rgba(0,0,0,.28)}
+[data-theme="dark"] header b{color:#fff;font-weight:700}
+[data-theme="dark"] #navbar{background:#23262c;border-bottom:1px solid #343a46}
+[data-theme="dark"] #navbar button,[data-theme="dark"] .gvbar button{background:#2a2e35;color:#f4f6f8;border:1px solid #4c5670}
+[data-theme="dark"] .card,[data-theme="dark"] .acc,[data-theme="dark"] .srow,[data-theme="dark"] .job,[data-theme="dark"] .acch,[data-theme="dark"] .srowh,[data-theme="dark"] .sug,[data-theme="dark"] .sug button{background:#2a2e35;color:#f4f6f8;border-color:#46506a;box-shadow:0 8px 22px rgba(0,0,0,.22)}
+[data-theme="dark"] input,[data-theme="dark"] textarea,[data-theme="dark"] select{background:#23262c;color:#f4f6f8;border-color:#4c5670}
+[data-theme="dark"] h2,[data-theme="dark"] .job b,[data-theme="dark"] .acch b,[data-theme="dark"] .srowh b{color:#fff;font-weight:700}
+[data-theme="dark"] .muted,[data-theme="dark"] .acch small,[data-theme="dark"] .srowh small,[data-theme="dark"] .job .a,[data-theme="dark"] .sug .h{color:#a7adb8}
+[data-theme="dark"] .btn{background:#404868;color:#fff;box-shadow:0 0 0 1px rgba(142,162,214,.28),0 8px 18px rgba(0,0,0,.2)}
+[data-theme="dark"] .btn.n,[data-theme="dark"] .btn.d,[data-theme="dark"] .pin button,[data-theme="dark"] .talkmic,[data-theme="dark"] .tabs button.on,[data-theme="dark"] .seg button.on.p{background:#404868;color:#fff}
+[data-theme="dark"] .btn.gr{background:#2a2e35;color:#f4f6f8;border:1px solid #4c5670;box-shadow:none}
+[data-theme="dark"] .tabs button{background:#2a2e35;color:#d7deef}
+[data-theme="dark"] .checks label{background:#23262c;border-color:#4c5670;color:#f4f6f8}
+[data-theme="dark"] .line,[data-theme="dark"] .kv{border-color:#3c4354}
+[data-theme="dark"] a{color:#8ea2d6}
+[data-theme="dark"] #toast{background:#404868}
+[data-theme="dark"] #gv{background:#1e2126}
+[data-theme="dark"] #gv img,[data-theme="dark"] .ggrid button,[data-theme="dark"] .rpv,[data-theme="dark"] .rth{background:#23262c}
+[data-theme="dark"] .ggrid span{color:#fff}
+[data-theme="dark"] .hbrand{display:flex;align-items:center;gap:12px;margin:2px 0 16px}
+[data-theme="dark"] .hbrand img{height:46px;width:auto;background:#fff;border-radius:10px;padding:3px}
+[data-theme="dark"] .hbrand b{display:block;color:#fff;font-size:18px;line-height:1.2}
+[data-theme="dark"] .hbrand small{display:block;color:#a7adb8;font-size:13px;font-weight:500;margin-top:2px}
+[data-theme="dark"] .tiles{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:0 0 14px}
+[data-theme="dark"] .tile{display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;gap:10px;min-height:104px;padding:14px 14px 16px;border-radius:16px;background:#2a2e35;color:#fff;border:1px solid #46506a;box-shadow:0 10px 24px rgba(0,0,0,.28),0 0 18px rgba(142,162,214,.08);font:inherit;font-weight:700;font-size:16px;text-align:left;cursor:pointer}
+[data-theme="dark"] .tile i{font-style:normal;font-size:26px;line-height:1;color:#8ea2d6}
+[data-theme="dark"] .rqi{background:#2a2e35;color:#f4f6f8}
+[data-theme="dark"] .rqi.bad{background:#2a2e35;color:#a7adb8}
+[data-theme="dark"] #pv .card,[data-theme="dark"] #pv input,[data-theme="dark"] #pv textarea,[data-theme="dark"] #pv .acch{background:#fff;color:#212020;border-color:#d5d8e2;box-shadow:none}
+[data-theme="dark"] #pv h2,[data-theme="dark"] #pv b{color:#3a415c}
+[data-theme="dark"] #pv .muted{color:#5c6370}
 </style>
 </head>
 <body>
+<div id="topstick">
 <header>
   <img src="logo.png" alt="Southern Concrete Coatings">
   <div><b>Southern Concrete Coatings</b></div>
   <button id="out" hidden onclick="logout()">Sign out</button>
 </header>
 <div id="testbar" hidden>Test mode — every email goes only to austin@techsourcedsolutions.com</div>
+<div id="navbar" hidden><button type="button" id="navback" onclick="navBack()">← Back</button><button type="button" id="navhome" onclick="navHome()">Home</button></div>
+</div>
 <div id="rq"></div>
 <div class="wrap" id="app"></div>
 <div id="toast"></div>
 <div id="gv" hidden></div>
 <div id="lb" onclick="if(event.target==this)this.style.display='none'" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:20;align-items:center;justify-content:center;flex-direction:column">
+  <div class="gvbar" style="width:100%;max-width:560px;padding:0 10px"><button type="button" onclick="navBack()">← Back</button><button type="button" onclick="navHome()">Home</button></div>
   <img id="lbi" alt="" style="max-width:100%;max-height:80vh">
   <div class="row" style="width:100%;max-width:560px;padding:10px">
     <button class="btn n" onclick="nav(-1)">◀</button>
@@ -135,9 +181,9 @@ a{color:var(--dg)}
     <button class="btn n" onclick="nav(1)">▶</button>
   </div>
 </div>
-<script src="config.js"></script>
-<script src="quote.js"></script>
-<script src="gallery.js"></script>
-<script src="app.js"></script>
+<script src="config.js?v=20261027c"></script>
+<script src="quote.js?v=20261027c"></script>
+<script src="gallery.js?v=20261027c"></script>
+<script src="app.js?v=20261027c"></script>
 </body>
 </html>

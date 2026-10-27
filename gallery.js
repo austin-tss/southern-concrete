@@ -2,7 +2,6 @@
    Images stay on simiron.com. Southern Concrete does not re-host them. */
 var CHIP_PAGE = 'https://simiron.com/products/decorative-chip/';
 var FLAKE_PAGE = 'https://simiron.com/systems/simflake-sb/';
-var METAL_PAGE = 'https://simiron.com/products/metallic-epoxy/';
 var QUARTZ_PAGE = 'https://simiron.com/systems/simquartz-db/';
 var SOLID_PAGE = 'https://simiron.com/wp-content/uploads/2026/05/U-TINT_COLOR-GUIDE_FLYER.pdf';
 var SIMIRON = 'https://www.simiron.com/';
@@ -86,42 +85,6 @@ var SCC_CATALOG = [
     page: CHIP_PAGE
   }),
   gItem({
-    id: 'sim-metal-blue-1',
-    name: 'Blue metallic',
-    system: 'metallic',
-    colors: 'blue silver gray black',
-    tags: ['metallic', 'blue', 'silver', 'gray', 'black', 'garage', 'color'],
-    src: 'https://simiron.com/wp-content/uploads/2023/12/Metallic-Training1.png',
-    page: METAL_PAGE
-  }),
-  gItem({
-    id: 'sim-metal-blue-2',
-    name: 'Blue metallic swirl',
-    system: 'metallic',
-    colors: 'blue white gray',
-    tags: ['metallic', 'blue', 'white', 'gray', 'garage', 'color'],
-    src: 'https://simiron.com/wp-content/uploads/2023/12/Metallic-Training2.png',
-    page: METAL_PAGE
-  }),
-  gItem({
-    id: 'sim-metal-purple',
-    name: 'Purple metallic',
-    system: 'metallic',
-    colors: 'purple black gray',
-    tags: ['metallic', 'purple', 'black', 'gray', 'garage', 'color'],
-    src: 'https://simiron.com/wp-content/uploads/2026/10/Simiron-University-purple-metallic.jpg',
-    page: METAL_PAGE
-  }),
-  gItem({
-    id: 'sim-metal-floor',
-    name: 'Metallic floor',
-    system: 'metallic',
-    colors: 'gray black silver',
-    tags: ['metallic', 'gray', 'black', 'silver', 'garage', 'color'],
-    src: 'https://simiron.com/wp-content/uploads/2026/10/home-f-metallic.jpg',
-    page: METAL_PAGE
-  }),
-  gItem({
     id: 'sim-quartz-floor',
     name: 'Quartz floor',
     system: 'quartz',
@@ -129,24 +92,6 @@ var SCC_CATALOG = [
     tags: ['quartz', 'white', 'tan', 'beige', 'garage', 'color'],
     src: 'https://simiron.com/wp-content/uploads/2026/10/home-f-quartz.jpg',
     page: QUARTZ_PAGE
-  }),
-  gItem({
-    id: 'sim-solid-haze',
-    name: 'Haze Gray solid',
-    system: 'solid',
-    colors: 'gray haze gray',
-    tags: ['solid', 'solid color', 'gray', 'haze gray', 'epoxy', 'color'],
-    src: 'https://simiron.com/wp-content/uploads/2021/01/2LayerC.png',
-    page: SOLID_PAGE
-  }),
-  gItem({
-    id: 'sim-solid-light',
-    name: 'Light Gray solid',
-    system: 'solid',
-    colors: 'gray light gray',
-    tags: ['solid', 'solid color', 'gray', 'light gray', 'epoxy', 'color'],
-    src: 'https://simiron.com/wp-content/uploads/2021/01/2LayerD.png',
-    page: SOLID_PAGE
   }),
   gItem({
     id: 'sim-solid-white',
@@ -173,7 +118,7 @@ var GALLERY_STOP = {
   floor: 1, floors: 1, photo: 1, photos: 1, picture: 1, pictures: 1, i: 1, want: 1, see: 1, to: 1,
   my: 1, look: 1, looking: 1, like: 1, something: 1
 };
-var GALLERY_WORD = { grey: 'gray', grays: 'gray', greys: 'gray', chips: 'chip', flakes: 'flake', garages: 'garage', metallics: 'metallic', blues: 'blue', colours: 'color', colors: 'color' };
+var GALLERY_WORD = { grey: 'gray', grays: 'gray', greys: 'gray', chips: 'chip', flakes: 'flake', garages: 'garage', blues: 'blue', colours: 'color', colors: 'color' };
 
 function galleryTokens(q) {
   return String(q || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(' ').map(function (w) {

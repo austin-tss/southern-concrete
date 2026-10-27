@@ -10,6 +10,7 @@ const sandbox = { module: { exports: {} }, console };
 vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(path.join(root, 'config.js'), 'utf8'), sandbox);
 const TEST_TO = sandbox.TEST_TO;
+const TEST_MODE = sandbox.TEST_MODE;
 const pins = Object.fromEntries(Object.entries(sandbox.ROLES).map(([pin, role]) => [role, pin]));
 const shots = fs.mkdtempSync(path.join(os.tmpdir(), 'scc-e2e-'));
 const customer = 'homeowner@example.com';
@@ -46,18 +47,20 @@ fs.writeFileSync(png, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJA
 
 try {
   await page.goto(base + '/?api=' + encodeURIComponent(base + '/exec'), { waitUntil: 'networkidle0' });
-  await waitText(page, 'Test mode');
-  await waitText(page, TEST_TO);
+  await waitText(page, 'Enter PIN');
+  if (TEST_MODE) {
+    await waitText(page, 'Test mode');
+    await waitText(page, TEST_TO);
+  }
   const logo = await page.$eval('header img', (img) => img.naturalWidth);
   if (!logo) fail('logo did not load');
   await shot(page, '01-login');
 
   if (!pins.Owner) fail('Owner PIN missing from config');
   await pressPin(page, pins.Owner);
-  await waitText(page, 'All my projects');
-  await waitText(page, 'New customer quote');
-  await waitText(page, 'Crew schedule');
-  await page.click('button.huge');
+  await waitText(page, 'Quote');
+  await waitText(page, 'Feedback');
+  await page.click('#tile-quote');
   await waitText(page, 'Price per sq ft');
   await page.click('#acc-qc .acch');
   await page.waitForSelector('#nm', { visible: true });
@@ -83,7 +86,7 @@ try {
   await waitText(page, 'Customer will see');
   await page.waitForFunction(() => [...document.querySelectorAll('#pv textarea,#pv input')].some((el) => (el.value || '').includes('Dominion') && (el.value || '').includes('480')));
   await page.click('#sq');
-  await waitText(page, 'All my projects (1)');
+  await waitText(page, 'Pat Homeowner');
   await shot(page, '03-projects');
 
   await page.evaluate(() => {
@@ -94,14 +97,14 @@ try {
   await waitText(page, 'Dominion');
   await waitText(page, '480 sq ft');
   await page.click('#rs');
-  await waitText(page, 'Test mode: Estimate sent only to ' + TEST_TO);
+  await waitText(page, TEST_MODE ? ('Test mode: Estimate sent only to ' + TEST_TO) : 'Estimate sent to the customer');
   await shot(page, '04-quoted');
   await page.evaluate(() => {
     [...document.querySelectorAll('button')].find((b) => b.textContent.includes('A Approve')).click();
   });
   await waitText(page, 'Step 2 · Do the job');
   await waitText(page, 'JOB COMPLETE');
-  await waitText(page, 'Approved · do the job');
+  await waitText(page, 'Approved');
   const before = await page.$('#bf');
   await before.uploadFile(png);
   await waitText(page, 'Before photos (1)');
@@ -111,24 +114,27 @@ try {
   await shot(page, '05-job');
   await page.click('#jc');
   await waitText(page, 'Step 3 · Invoice');
-  await waitText(page, 'Done · invoice it');
+  await waitText(page, 'Job done - invoice');
   const amount = await page.$eval('#am', (el) => el.value);
   if (amount !== '$3,120.00') fail('invoice amount was ' + amount);
   await shot(page, '06-invoice');
   await page.click('#invbtn');
-  await waitText(page, 'Mark PAID');
   await waitText(page, 'OPEN');
-  await page.click('#paidbtn');
+  await page.evaluate(() => {
+    [...document.querySelectorAll('button')].find((b) => b.textContent.includes('Record payment')).click();
+  });
+  await page.click('#ps');
   await waitText(page, 'PAID');
-  await waitText(page, 'All projects');
   await shot(page, '07-paid');
 
   const inbox = await (await fetch(base + '/inbox')).json();
   if (inbox.length !== 4) fail('expected 4 emails, got ' + inbox.length);
   for (const mail of inbox) {
-    if (mail.to !== TEST_TO || mail.replyTo !== TEST_TO) fail('mail left test mode: ' + JSON.stringify({ to: mail.to, replyTo: mail.replyTo, kind: mail.kind }));
-    if (String(mail.to).includes('example.com') || String(mail.replyTo).includes('example.com')) fail('customer address used');
-    if (!/TEST - /.test(mail.subject)) fail('subject missing TEST prefix');
+    if (TEST_MODE) {
+      if (mail.to !== TEST_TO || mail.replyTo !== TEST_TO) fail('mail left test mode: ' + JSON.stringify({ to: mail.to, replyTo: mail.replyTo, kind: mail.kind }));
+      if (String(mail.to).includes('example.com') || String(mail.replyTo).includes('example.com')) fail('customer address used');
+      if (!/TEST - /.test(mail.subject)) fail('subject missing TEST prefix');
+    } else if (mail.to !== customer) fail('customer mail went to ' + mail.to);
   }
   const quote = inbox.find((m) => m.kind === 'quote');
   const recap = inbox.find((m) => m.kind === 'recap');

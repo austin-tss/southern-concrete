@@ -21,7 +21,7 @@ function grab(name) {
 
 const sandbox = {};
 vm.createContext(sandbox);
-vm.runInContext(grab('normalizeMeasure_') + '\n' + grab('geminiText_') + '\n' + grab('normalizeFill_'), sandbox);
+vm.runInContext(code.slice(code.indexOf('function hardnessVal_'), code.indexOf('function speechItems_')), sandbox);
 
 test('Gemini measure JSON becomes length, width, square feet, and a confidence', () => {
   const wrapped = '```json\n{"lengthFt":24,"widthFt":18,"sqft":432,"confidence":"medium","note":"Double door looks 16 ft."}\n```';
@@ -65,7 +65,7 @@ test('talk-through fill returns quote fields and leaves internal notes out', () 
   assert.equal(got.rate, 6.5);
   assert.match(got.prep, /Diamond grinding/);
   assert.match(got.extras, /Moisture mitigation/);
-  assert.equal(got.hardness, undefined);
+  assert.equal(got.hardness, 8);
   assert.equal(got.hardnessHow, undefined);
   assert.equal(got.internalNotes, undefined);
   assert.equal(got.aiNote, undefined);
@@ -108,7 +108,15 @@ test('talk-through fill returns quote fields and leaves internal notes out', () 
   assert.match(fb, /pinOk_\(d\)/);
   assert.match(fb, /feedback\.json/);
   assert.match(fb, /at: new Date\(\)\.toISOString\(\)/);
-  assert.doesNotMatch(fb, /MailApp|sendMail_|sendQuote_/);
+  assert.match(fb, /mailFeedback_\(fbList\[fbList\.length - 1\]\)/);
+  assert.doesNotMatch(fb, /sendQuote_/);
+  assert.match(code, /scriptProp_\('FEEDBACK_EMAIL'\)/);
+  assert.match(code, /Southern Concrete Coatings app feedback/);
+  assert.match(code, /function mailFeedback_\([\s\S]*catch \(eMail\)/);
+  assert.match(grab('mailFeedback_'), /America\/New_York/);
+  assert.match(grab('mailFeedback_'), /name: 'Southern Concrete Coatings'/);
+  assert.doesNotMatch(grab('geminiFetch_'), /temperature|topP|topK/);
+  assert.match(grab('geminiConfig_'), /thinkingLevel: 'low'/);
   const getFb = code.slice(code.indexOf("if (p.a === 'feedback')"), code.indexOf("if (p.a === 'img'"));
   assert.match(getFb, /feedback\.json/);
   assert.doesNotMatch(getFb, /pinOk_|MailApp/);
@@ -121,6 +129,23 @@ test('talk-through fill returns quote fields and leaves internal notes out', () 
   assert.match(qe, /cleanItems_\(d\.items\)/);
   assert.doesNotMatch(qe, /j\.est\s*=/);
   assert.doesNotMatch(qe, /MailApp/);
+});
+
+test('a house note fills sq ft, system, color, prep, rate, and hardness', () => {
+  const start = code.indexOf('var FILL_SYSTEMS');
+  const end = code.indexOf('function mergeFill_');
+  const box = {};
+  vm.createContext(box);
+  vm.runInContext(code.slice(start, end), box);
+  const got = box.interpretSpeech_("doing a concrete job at a house it's about 300 ft the cutting system will use is grind and prep only color flake will be just a wolf gray wanted to do crack repair diamond grinding and the price per square foot on this one will probably need to do seven with a concrete harness of six");
+  assert.equal(got.sqft, 300);
+  assert.equal(got.jobType, 'Residential');
+  assert.equal(got.system, 'Grind and prep only');
+  assert.equal(got.color, 'Wolf Gray');
+  assert.match(got.prep, /Diamond grinding/);
+  assert.match(got.prep, /Crack repair/);
+  assert.equal(got.rate, 7);
+  assert.equal(got.hardness, 6);
 });
 
 test('Gemini retries a busy model, then tries the flash alias once', () => {

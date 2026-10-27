@@ -12,22 +12,20 @@ function names(q, extras) {
   return g.match(q, extras).map((x) => x.name);
 }
 
-test('plain language matches flake, metallic, quartz, and solid color', () => {
+test('plain language matches flake, quartz, and solid color', () => {
   const gray = names('show me gray flake garage floor');
   assert.ok(gray.includes('Feather Gray'));
   assert.ok(gray.includes('Glacier'));
   assert.ok(gray.includes('Gray flake floor'));
   assert.equal(gray.includes('Safari'), false);
-  assert.equal(gray.includes('Blue metallic'), false);
+  assert.equal(names('metallic blue').some((n) => /metallic/i.test(n)), false);
+  assert.equal(names('haze gray').includes('Haze Gray solid'), false);
+  assert.equal(names('light gray').includes('Light Gray solid'), false);
   assert.ok(names('grey flake').includes('Feather Gray'));
-  const blue = names('metallic blue');
-  assert.ok(blue.includes('Blue metallic'));
-  assert.ok(blue.includes('Blue metallic swirl'));
-  assert.equal(blue.includes('Feather Gray'), false);
   assert.ok(names('quartz').includes('Quartz floor'));
-  const solid = names('solid gray');
-  assert.ok(solid.includes('Haze Gray solid'));
-  assert.equal(solid.includes('Tile Red solid'), false);
+  const solid = names('solid red');
+  assert.ok(solid.includes('Tile Red solid'));
+  assert.equal(solid.includes('Feather Gray'), false);
 });
 
 test('Simiron photos stay on Simiron and own photos join the same search', () => {

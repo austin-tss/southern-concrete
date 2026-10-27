@@ -177,21 +177,163 @@ function customerJob(j){
   delete o.hardnessHow;
   delete o.internalNotes;
   delete o.aiNote;
+  delete o.phone2;
+  delete o.contact2;
+  if (Array.isArray(o.items)) {
+    var vis = o.items.filter(function (it) { return !(it && it.internal); });
+    if (vis.length !== o.items.length) {
+      o.items = vis;
+      o.total = totalOf(vis);
+    }
+  }
   return o;
+}
+function defaultForm() {
+  return {
+    systems: [
+      { name: 'Garage floor flake system', rate: '' },
+      { name: 'Full Flake Broadcast System', rate: '' },
+      { name: 'Acid Stain and Seal', rate: '' },
+      { name: 'Grind and Seal', rate: '' },
+      { name: 'Metallic epoxy', rate: '' },
+      { name: 'Solid color epoxy', rate: '' },
+      { name: 'Polyaspartic system', rate: '' },
+      { name: 'Polyurea garage system', rate: '' },
+      { name: 'Quartz broadcast', rate: '' },
+      { name: 'Pool deck coating', rate: '' },
+      { name: 'Patio and porch coating', rate: '' },
+      { name: 'Commercial kitchen floor', rate: '' },
+      { name: 'Warehouse / industrial floor', rate: '' },
+      { name: 'Concrete sealing', rate: '' },
+      { name: 'Grind and prep only', rate: '' },
+      { name: 'Crack and spall repair', rate: '' }
+    ],
+    colors: ['Dominion', 'Wolf Gray'],
+    addons: [
+      { name: 'Diamond grinding', price: '' },
+      { name: 'Crack repair', price: '' },
+      { name: 'Spall / patch repair', price: '' },
+      { name: 'Moisture mitigation', price: '' },
+      { name: 'Oil stain treatment', price: '' },
+      { name: 'Joint fill', price: '' },
+      { name: 'Coating removal', price: '' }
+    ],
+    fields: [
+      { id: 'talk', label: 'Talk it through', kind: 'talk', show: true, customer: false },
+      { id: 'name', label: 'Customer name', kind: 'text', show: true, customer: true },
+      { id: 'address', label: 'Address', kind: 'text', show: true, customer: true },
+      { id: 'email', label: 'Customer email', kind: 'text', show: true, customer: true },
+      { id: 'phone', label: 'Customer phone', kind: 'text', show: true, customer: false },
+      { id: 'jobType', label: 'Job type', kind: 'jobtype', show: true, customer: false },
+      { id: 'sqft', label: 'Square footage', kind: 'number', show: true, customer: true },
+      { id: 'system', label: 'Coating system', kind: 'system', show: true, customer: true },
+      { id: 'color', label: 'Color / flake', kind: 'color', show: true, customer: true },
+      { id: 'prep', label: 'Prep', kind: 'prep', show: true, customer: true },
+      { id: 'cure', label: 'Cure / return to service', kind: 'cure', show: true, customer: true },
+      { id: 'rate', label: 'Price per sq ft', kind: 'number', show: true, customer: true },
+      { id: 'hardness', label: 'Concrete hardness (Mohs 1–10)', kind: 'hardness', show: true, customer: false, lock: true },
+      { id: 'photos', label: 'Photo attachments', kind: 'photos', show: true, customer: true },
+      { id: 'quote', label: 'Notes', kind: 'notes', show: true, customer: false },
+      { id: 'addl', label: 'Notes for customer', kind: 'addl', show: true, customer: true },
+      { id: 'inote', label: 'Internal notes', kind: 'inote', show: true, customer: false, lock: true }
+    ]
+  };
+}
+function normalizeForm(saved) {
+  var base = defaultForm();
+  saved = saved && typeof saved === 'object' ? saved : {};
+  function cleanName(s, n) { return String(s || '').trim().slice(0, n || 80); }
+  var systems = Array.isArray(saved.systems) ? saved.systems : base.systems;
+  systems = systems.map(function (s) {
+    if (typeof s === 'string') s = { name: s, rate: '' };
+    var name = cleanName(s && s.name);
+    if (!name) return null;
+    var rate = s.rate == null || s.rate === '' ? '' : String(s.rate).replace(/[^0-9.]/g, '').slice(0, 10);
+    return { name: name, rate: rate };
+  }).filter(Boolean).slice(0, 80);
+  var colors = Array.isArray(saved.colors) ? saved.colors : base.colors;
+  colors = colors.map(function (c) { return cleanName(c, 60); }).filter(Boolean).slice(0, 80);
+  var addons = Array.isArray(saved.addons) ? saved.addons : base.addons;
+  addons = addons.map(function (a) {
+    if (typeof a === 'string') a = { name: a, price: '' };
+    var name = cleanName(a && a.name);
+    if (!name) return null;
+    var price = a.price == null || a.price === '' ? '' : String(a.price).replace(/[^0-9.]/g, '').slice(0, 10);
+    return { name: name, price: price };
+  }).filter(Boolean).slice(0, 80);
+  var defaults = base.fields;
+  var known = {};
+  defaults.forEach(function (f) { known[f.id] = f; });
+  var seen = {};
+  var fields = [];
+  var src = Array.isArray(saved.fields) ? saved.fields : defaults;
+  src.forEach(function (f) {
+    if (!f || !f.id || seen[f.id]) return;
+    var id = cleanName(f.id, 40);
+    var builtin = known[id];
+    var kind = builtin ? builtin.kind : cleanName(f.kind, 20);
+    if (!builtin && ['text', 'number', 'select', 'check', 'price'].indexOf(kind) < 0) kind = 'text';
+    var lock = !!(builtin && builtin.lock) || id === 'hardness' || id === 'inote';
+    var opts = Array.isArray(f.options) ? f.options.map(function (x) { return cleanName(x, 60); }).filter(Boolean).slice(0, 40) : [];
+    fields.push({
+      id: id,
+      label: cleanName(f.label || (builtin && builtin.label) || 'Field', 80),
+      kind: kind,
+      show: f.show === false ? false : true,
+      customer: lock ? false : f.customer !== false && (builtin ? !!builtin.customer : !!f.customer),
+      lock: lock,
+      options: opts,
+      price: f.price == null || f.price === '' ? '' : String(f.price).replace(/[^0-9.]/g, '').slice(0, 10)
+    });
+    seen[id] = 1;
+  });
+  defaults.forEach(function (f) { if (!seen[f.id]) fields.push(JSON.parse(JSON.stringify(f))); });
+  return { systems: systems, colors: colors, addons: addons, fields: fields };
+}
+function formField(form, id) {
+  var list = form && form.fields || [];
+  for (var i = 0; i < list.length; i++) if (list[i] && list[i].id === id) return list[i];
+  return null;
+}
+function customerSees(form, id) {
+  if (id === 'hardness' || id === 'inote' || id === 'hardnessHow') return false;
+  if (!form) return true;
+  var f = formField(form, id);
+  if (!f) return true;
+  if (f.lock || f.show === false || f.customer === false) return false;
+  return true;
 }
 function customerFace(o){
   o = o || {};
   return Object.assign({}, o, { job: customerJob(o.job) });
 }
-function specRows(j){
-  var rows=[
-    ['Square footage',j.sqft?formatSq(j.sqft)+' sq ft':''],
-    ['Coating system',j.system||''],
-    ['Color / flake',j.color||''],
-    ['Prep',j.prep||''],
-    ['Return to service',j.cure||''],
-    ['Price per sq ft',j.rate?money(j.rate)+' / sq ft':'']
-  ].filter(function(r){return r[1];});
+function specRows(j, form){
+  var defs=[
+    ['sqft','Square footage',j.sqft?formatSq(j.sqft)+' sq ft':''],
+    ['system','Coating system',j.system||''],
+    ['color','Color / flake',j.color||''],
+    ['prep','Prep',j.prep||''],
+    ['cure','Return to service',j.cure||''],
+    ['rate','Price per sq ft',j.rate?money(j.rate)+' / sq ft':'']
+  ];
+  var rows=[];
+  defs.forEach(function(d){
+    if(!d[2])return;
+    if(form&&!customerSees(form,d[0]))return;
+    var f=formField(form,d[0]);
+    rows.push([(f&&f.label)||d[1], d[2]]);
+  });
+  var custom=(j&&j.custom)||{};
+  ((form&&form.fields)||[]).forEach(function(f){
+    if(!f||defs.some(function(d){return d[0]===f.id;}))return;
+    if(f.kind==='price'||f.kind==='talk'||f.kind==='photos'||f.kind==='notes'||f.kind==='addl'||f.kind==='hardness'||f.kind==='inote'||f.kind==='jobtype'||f.kind==='prep'||f.kind==='system'||f.kind==='color'||f.kind==='cure')return;
+    if(f.show===false||f.customer===false||f.lock)return;
+    var v=custom[f.id];
+    if(f.kind==='check')v=v?'Yes':'';
+    v=String(v==null?'':v).trim();
+    if(!v)return;
+    rows.push([f.label||'Detail', v.slice(0,400)]);
+  });
   if(!rows.length)return '';
   return '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:14px;margin:0 0 16px">'+
     rows.map(function(r){
@@ -314,7 +456,7 @@ function quoteEmailHtml(o){
   var copy=quoteEmailCopy(o);
   var inner=greetLine('Dear',j.name)+
     '<p style="line-height:1.6">'+emailText(copy.body)+'</p>'+
-    metaBlock(j,'Estimate #',j.est,o.colors)+specRows(j)+itemsTable(j,o.colors)+additionalNotesHtml(j,o.colors)+
+    metaBlock(j,'Estimate #',j.est,o.colors)+specRows(j, o.settings&&o.settings.form)+itemsTable(j,o.colors)+additionalNotesHtml(j,o.colors)+
     (o.photosHtml?'<p style="margin:18px 0 6px"><b style="color:'+n+'">Site photos</b></p>'+o.photosHtml:'')+
     '<div style="background:#f4f5f8;border-radius:10px;padding:16px;margin:20px 0"><p style="margin:0 0 4px;font-size:16px"><b style="color:'+n+'">Ready to coat the floor? Tap one:</b></p>'+
     '<p style="margin:0 0 6px;color:#5c6370;font-size:13px">Next we will ask when the crew can have the floor.</p>'+
@@ -330,7 +472,7 @@ function quoteEmailHtml(o){
 function pdfHtml(o){
   o=customerFace(o);
   var j=o.job;
-  var inner=metaBlock(j,'Estimate #',j.est,o.colors)+specRows(j)+itemsTable(j,o.colors)+additionalNotesHtml(j,o.colors)+
+  var inner=metaBlock(j,'Estimate #',j.est,o.colors)+specRows(j, o.settings&&o.settings.form)+itemsTable(j,o.colors)+additionalNotesHtml(j,o.colors)+
     '<h3 style="color:'+o.colors.n+';margin:22px 0 6px;font-size:15px">Terms</h3><ul style="font-size:13px;color:#33383d;line-height:1.6;padding-left:18px">'+
     TERMS.map(function(t){return '<li>'+escHtml(t)+'</li>';}).join('')+'</ul>'+
     '<p style="font-size:13px">To approve, use the buttons in the estimate email or call '+escHtml(o.co.phone)+'.</p>'+
@@ -348,7 +490,7 @@ function recapEmailHtml(o){
   var where=String(j.address||'').trim();
   var inner=greetLine('Hi',j.name)+
     '<p style="line-height:1.6">'+(where?'Your coating at '+escHtml(where)+' is complete.':'Your coating is complete.')+' Here is a look at the floor, before and after.</p>'+
-    specRows(j)+itemsTable(j,o.colors)+
+    specRows(j, o.settings&&o.settings.form)+itemsTable(j,o.colors)+
     (av?'<p><b style="color:'+n+'">Scheduled from your preference:</b> '+escHtml(av)+'</p>':'')+
     (j.crewNotes?'<p><b style="color:'+n+'">Crew notes:</b> '+escHtml(j.crewNotes)+'</p>':'')+
     '<h3 style="color:'+dg+'">Before</h3>'+(o.beforeHtml||'<p style="color:#8a8f98">No photos</p>')+
@@ -361,7 +503,7 @@ function invoiceEmailHtml(o){
   var j=o.job,v=j.invoice||{},inv=String(j.est||j.id).replace('EST','INV');
   var inner=greetLine('Dear',j.name)+
     '<p>Thank you for your business. Here is the invoice for the completed coating.</p>'+
-    metaBlock(j,'Invoice #',inv,o.colors)+specRows(j)+itemsTable(j,o.colors)+
+    metaBlock(j,'Invoice #',inv,o.colors)+specRows(j, o.settings&&o.settings.form)+itemsTable(j,o.colors)+
     '<p style="font-size:18px;text-align:right"><b>Amount due: <span style="color:'+o.colors.dg+'">'+escHtml(v.amount)+'</span></b></p>'+
     additionalNotesHtml(j,o.colors)+
     (v.note?'<p>'+escHtml(v.note)+'</p>':'')+
@@ -412,7 +554,7 @@ var SCCQuote={
   parseSqft:parseSqft,parseRate:parseRate,parseLump:parseLump,
   quoteEmailHtml:quoteEmailHtml,pdfHtml:pdfHtml,recapEmailHtml:recapEmailHtml,invoiceEmailHtml:invoiceEmailHtml,
   responseFormHtml:responseFormHtml,responseThanksHtml:responseThanksHtml,reviewEmailHtml:reviewEmailHtml,
-  customerJob:customerJob,TERMS:TERMS,escHtml:escHtml,
+  customerJob:customerJob,defaultForm:defaultForm,normalizeForm:normalizeForm,TERMS:TERMS,escHtml:escHtml,
   QUOTE_EMAIL_BODY:QUOTE_EMAIL_BODY,QUOTE_EMAIL_SUBJECT:QUOTE_EMAIL_SUBJECT,QUOTE_EMAIL_SIGN:QUOTE_EMAIL_SIGN,
   quoteEmailCopy:quoteEmailCopy
 };

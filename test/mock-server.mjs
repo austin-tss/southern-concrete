@@ -24,7 +24,8 @@ const receipts = new Map();
 const gallery = [];
 let measureOn = false;
 let fillOn = false;
-let settings = { payLink: '', reviewLink: '', finLink: '', finMin: 1000, ocr: false };
+const trips = [];
+let settings = { payLink: '', reviewLink: '', finLink: '', finMin: 1000, ocr: true, theme: 'dark', mileRate: 0.7, quoteBody: '', quoteSubject: '', quoteSign: '', form: null, qbo: { connected: false, env: 'sandbox' } };
 let seq = 1;
 let rcSeq = 1;
 const OWNER_PIN = Object.keys(sandbox.ROLES || {}).find((k) => sandbox.ROLES[k] === 'Owner') || '';
@@ -133,12 +134,17 @@ function handle(d) {
     if (!pinOk(d)) return { ok: false, err: 'Wrong PIN' };
     if (d.a === 'settings') {
       const fm = Number(String(d.finMin == null ? '' : d.finMin).replace(/[^0-9.\-]/g, ''));
+      const mile = Number(d.mileRate);
       settings = {
         payLink: String(d.payLink || '').trim(),
         reviewLink: String(d.reviewLink || '').trim(),
         finLink: String(d.finLink || '').trim(),
         finMin: Number.isNaN(fm) ? 1000 : fm,
-        ocr: false,
+        ocr: true,
+        theme: d.theme === 'classic' ? 'classic' : 'dark',
+        mileRate: !Number.isNaN(mile) && mile >= 0 && mile <= 100 ? mile : 0.7,
+        form: d.form ? q.normalizeForm(d.form) : q.defaultForm(),
+        qbo: settings.qbo || { connected: false, env: 'sandbox' },
         quoteBody: String(d.quoteBody || '').trim().slice(0, 4000),
         quoteSubject: String(d.quoteSubject || '').trim().slice(0, 300),
         quoteSign: String(d.quoteSign || '').trim().slice(0, 800)
@@ -170,6 +176,46 @@ function handle(d) {
     }
     if (d.a === 'rcrescan') return { ok: true, receiptId: d.id || '', ocr: false, reason: 'none', data: {} };
     if (d.a === 'rcdrop') { receipts.delete(d.id); return { ok: true }; }
+  }
+  if (d.a === 'qboconnect') {
+    if (!pinOk(d)) return { ok: false, err: 'Wrong PIN' };
+    return { ok: false, err: 'Add QBO_CLIENT_ID and QBO_CLIENT_SECRET in Script Properties.' };
+  }
+  if (d.a === 'qbodisconnect') {
+    if (!pinOk(d)) return { ok: false, err: 'Wrong PIN' };
+    settings.qbo = { connected: false, env: 'sandbox' };
+    return { ok: true, settings };
+  }
+  if (d.a === 'milelist' || d.a === 'mileadd' || d.a === 'miledel' || d.a === 'cedit') {
+    if (!pinOk(d)) return { ok: false, err: 'Wrong PIN' };
+    if (d.a === 'milelist') return { ok: true, trips, mileRate: settings.mileRate };
+    if (d.a === 'miledel') {
+      for (let i = trips.length - 1; i >= 0; i--) if (trips[i].id === d.id) trips.splice(i, 1);
+      return { ok: true, trips };
+    }
+    if (d.a === 'mileadd') {
+      trips.unshift({
+        id: 'MI' + (seq++),
+        date: String(d.date || '2026-10-27').slice(0, 10),
+        jobId: String(d.jobId || ''),
+        customer: String(d.customer || ''),
+        start: d.start || '', end: d.end || '', miles: d.miles || '',
+        purpose: String(d.purpose || ''), notes: String(d.notes || ''),
+        created: new Date().toISOString()
+      });
+      return { ok: true, trips };
+    }
+    const ids = d.ids || [];
+    jobs.forEach((x) => {
+      if (!ids.includes(x.id)) return;
+      x.name = String(d.name || '').trim();
+      x.phone = String(d.phone || '').trim();
+      x.email = String(d.email || '').trim();
+      x.address = String(d.address || '').trim();
+      x.phone2 = String(d.phone2 || '').trim();
+      x.contact2 = String(d.contact2 || '').trim();
+    });
+    return { ok: true };
   }
   if (d.a === 'delete') {
     if (!pinOk(d)) return { ok: false, err: 'Wrong PIN' };
