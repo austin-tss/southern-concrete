@@ -21,6 +21,7 @@ const inbox = [];
 const expenses = [];
 const receipts = new Map();
 const gallery = [];
+let measureOn = false;
 let settings = { payLink: '', reviewLink: '', finLink: '', finMin: 1000, ocr: false };
 let seq = 1;
 let rcSeq = 1;
@@ -37,6 +38,7 @@ function hardnessVal(v) {
   return n;
 }
 function seed(job) { jobs.unshift(job); return job; }
+function armMeasure(on) { measureOn = !!on; }
 
 function envelope(job) {
   const env = q.deliveryAddress(TEST_MODE, TEST_TO, job && job.email, CO.email);
@@ -82,6 +84,16 @@ function handle(d) {
     const i = gallery.findIndex((x) => x.id === d.id);
     if (i >= 0) gallery.splice(i, 1);
     return { ok: true, gallery };
+  }
+  if (d.a === 'measure') {
+    if (!pinOk(d)) return { ok: false, err: 'Wrong PIN' };
+    const images = Array.isArray(d.images) ? d.images : (d.photos || []);
+    if (!images.length) return { ok: true, ready: false, message: 'Add a photo of the floor first' };
+    if (!measureOn) return { ok: true, ready: false, message: 'AI measuring not set up yet' };
+    return {
+      ok: true, ready: true, sqft: 432, lengthFt: 24, widthFt: 18, confidence: 'medium',
+      note: 'ZXAI double door about 16 ft, two bays'
+    };
   }
   if (['settings', 'explist', 'expadd', 'expdel', 'rcscan', 'rcrescan', 'rcdrop'].includes(d.a)) {
     if (!pinOk(d)) return { ok: false, err: 'Wrong PIN' };
@@ -299,4 +311,4 @@ if (process.argv[1] && process.argv[1].endsWith('mock-server.mjs')) {
   start(port).then(() => console.log('mock http://127.0.0.1:' + port + '/?api=http://127.0.0.1:' + port + '/exec'));
 }
 
-export { start, inbox, seed };
+export { start, inbox, seed, armMeasure };

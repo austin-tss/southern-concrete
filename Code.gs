@@ -185,6 +185,7 @@ function customerJob(j){
   delete o.hardness;
   delete o.hardnessHow;
   delete o.internalNotes;
+  delete o.aiNote;
   return o;
 }
 function customerFace(o){
@@ -438,6 +439,7 @@ function view_(j) {
   delete o.hardness;
   delete o.hardnessHow;
   delete o.internalNotes;
+  delete o.aiNote;
   return o;
 }
 function logoBlob_() {
@@ -595,6 +597,91 @@ function gallery_() {
   var list = load_('gallery.json');
   return Array.isArray(list) ? list : [];
 }
+function scriptProp_(name) {
+  try {
+    var v = PropertiesService.getScriptProperties().getProperty(name);
+    return v ? String(v) : '';
+  } catch (eProp) { return ''; }
+}
+function geminiModel_() {
+  return scriptProp_('GEMINI_MODEL') || 'gemini-2.5-flash';
+}
+function normalizeMeasure_(raw) {
+  var o = raw;
+  if (typeof raw === 'string') {
+    var t = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
+    var start = t.indexOf('{'), end = t.lastIndexOf('}');
+    if (start >= 0 && end > start) t = t.slice(start, end + 1);
+    try { o = JSON.parse(t); } catch (eJson) { return null; }
+  }
+  if (!o || typeof o !== 'object' || Array.isArray(o)) return null;
+  function num(v) {
+    var n = Number(String(v == null ? '' : v).replace(/[^0-9.\-]/g, ''));
+    if (isNaN(n) || n <= 0 || n > 100000) return null;
+    return Math.round(n * 10) / 10;
+  }
+  var lengthFt = num(o.lengthFt != null ? o.lengthFt : o.length);
+  var widthFt = num(o.widthFt != null ? o.widthFt : o.width);
+  var sqft = num(o.sqft != null ? o.sqft : (o.squareFeet != null ? o.squareFeet : o.area));
+  if (!sqft && lengthFt && widthFt) sqft = Math.round(lengthFt * widthFt * 10) / 10;
+  if (!sqft) return null;
+  var conf = String(o.confidence || 'low').toLowerCase();
+  if (conf !== 'low' && conf !== 'medium' && conf !== 'high') conf = 'low';
+  var note = String(o.note || o.reasoning || '').replace(/\s+/g, ' ').trim().slice(0, 400);
+  return { lengthFt: lengthFt, widthFt: widthFt, sqft: Math.round(sqft), confidence: conf, note: note };
+}
+function geminiText_(parsed) {
+  var c = parsed && parsed.candidates && parsed.candidates[0];
+  var parts = (c && c.content && c.content.parts) || [];
+  var text = '';
+  for (var i = 0; i < parts.length; i++) if (parts[i] && parts[i].text) text += parts[i].text;
+  return text;
+}
+function measureFail_() {
+  return { ok: true, ready: false, message: 'Could not measure that photo. Enter the square footage by hand.' };
+}
+function measureFloor_(images, known) {
+  // GEMINI_API_KEY and optional GEMINI_MODEL are Script Properties. Never paste the key into this file.
+  var key = scriptProp_('GEMINI_API_KEY');
+  if (!key) return { ok: true, ready: false, message: 'AI measuring not set up yet' };
+  var shots = Array.isArray(images) ? images : (images ? [images] : []);
+  var parts = [];
+  var prompt = 'You measure concrete floors from photos for a coatings contractor. Estimate the floor length, width, and area in feet and square feet. Use reference cues when they are visible: a single-car garage door is about 8 or 9 feet wide, a double-car garage door is about 16 feet wide, a typical car is about 6 feet wide and 14 to 16 feet long, and count the bays. If the contractor gives one known dimension, trust it and scale the other dimension from the photo. Return JSON with keys lengthFt, widthFt, sqft, confidence (low, medium, or high), and note. The note is one or two sentences on the cues you used. Do not include a price.';
+  var knownText = String(known || '').trim().slice(0, 200);
+  if (knownText) prompt += ' Known dimension from the contractor: ' + knownText;
+  for (var i = 0; i < shots.length && parts.length < 4; i++) {
+    var s = String(shots[i] || '');
+    var m = s.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=\s]+)$/);
+    if (!m || m[2].length > 2000000) continue;
+    parts.push({ inline_data: { mime_type: m[1], data: m[2].replace(/\s/g, '') } });
+  }
+  if (!parts.length) return { ok: true, ready: false, message: 'Add a photo of the floor first' };
+  parts.unshift({ text: prompt });
+  var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(geminiModel_()) + ':generateContent';
+  var res, code, body;
+  try {
+    res = UrlFetchApp.fetch(url, {
+      method: 'post',
+      contentType: 'application/json',
+      muteHttpExceptions: true,
+      headers: { 'x-goog-api-key': key },
+      payload: JSON.stringify({
+        contents: [{ role: 'user', parts: parts }],
+        generationConfig: { temperature: 0.2, responseMimeType: 'application/json' }
+      })
+    });
+    code = res.getResponseCode();
+    body = res.getContentText() || '';
+  } catch (eFetch) {
+    return measureFail_();
+  }
+  if (code < 200 || code >= 300) return measureFail_();
+  var parsed;
+  try { parsed = JSON.parse(body); } catch (eParse) { return measureFail_(); }
+  var got = normalizeMeasure_(geminiText_(parsed));
+  if (!got) return measureFail_();
+  return { ok: true, ready: true, sqft: got.sqft, lengthFt: got.lengthFt, widthFt: got.widthFt, confidence: got.confidence, note: got.note };
+}
 function saveReceiptImage_(image) {
   var parts = String(image || '').split(',');
   if (parts.length < 2 || !parts[1]) throw new Error('No receipt photo');
@@ -695,6 +782,10 @@ function doPost(e) {
       if (had && d.id) { try { DriveApp.getFileById(d.id).setTrashed(true); } catch (eG) {} }
       save_(left, 'gallery.json');
       return out_({ ok: true, gallery: left });
+    }
+    if (d.a === 'measure') {
+      if (!pinOk_(d)) return out_({ ok: false, err: 'Wrong PIN' });
+      return out_(measureFloor_(d.images || d.photos, d.known));
     }
     if (d.a === 'settings' || d.a === 'explist' || d.a === 'expadd' || d.a === 'expdel' || d.a === 'rcscan' || d.a === 'rcrescan' || d.a === 'rcdrop') {
       if (!pinOk_(d)) return out_({ ok: false, err: 'Wrong PIN' });

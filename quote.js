@@ -176,6 +176,7 @@ function customerJob(j){
   delete o.hardness;
   delete o.hardnessHow;
   delete o.internalNotes;
+  delete o.aiNote;
   return o;
 }
 function customerFace(o){

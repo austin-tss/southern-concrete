@@ -629,6 +629,38 @@ function livePrice() {
   if (sq > 0 && rate > 0) el.textContent = SCCQuote.formatSq(sq) + ' sq ft × ' + SCCQuote.money(rate) + ' = ' + SCCQuote.money(SCCQuote.round2(sq * rate));
   else el.textContent = 'Enter square footage and a price per sq ft.';
 }
+async function measurePhotos(inp) {
+  const files = [...(inp.files || [])].slice(0, 4);
+  inp.value = '';
+  const note = $('#ainote');
+  const label = $('#ailabel');
+  const btn = $('#mbtn');
+  if (!files.length) return;
+  if (btn) { btn.disabled = true; btn.textContent = 'Measuring…'; }
+  if (note) { note.hidden = true; note.textContent = ''; }
+  try {
+    const images = [];
+    for (const f of files) images.push(await shrink(f));
+    const r = await api({ a: 'measure', pin: ownerPin(), images, known: ($('#known') && $('#known').value.trim()) || '' });
+    if (!r.ready) {
+      if (note) { note.hidden = false; note.textContent = r.message || 'AI measuring not set up yet'; }
+      return;
+    }
+    const sq = $('#sqft');
+    if (sq) sq.value = String(r.sqft);
+    if (label) label.hidden = false;
+    const bits = [];
+    if (r.lengthFt && r.widthFt) bits.push(r.lengthFt + ' ft by ' + r.widthFt + ' ft');
+    if (r.confidence) bits.push(r.confidence + ' confidence');
+    if (r.note) bits.push(r.note);
+    if (note) { note.hidden = false; note.textContent = 'Internal only. ' + bits.join(' · '); }
+    livePrice();
+  } catch (e) {
+    if (note) { note.hidden = false; note.textContent = e.message || 'Could not measure that photo. Enter the square footage by hand.'; }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Measure from photo'; }
+  }
+}
 function newq(pre) {
   photos = [];
   ACC = {};
@@ -637,6 +669,11 @@ function newq(pre) {
   A.innerHTML = `<div class="card"><h2>New quote</h2>
 ${acc('qc', 'Customer details', 'Tap to enter name, address, email', `<label>Customer name</label><input id="nm" autocomplete="name" oninput="cs()"><label>Address</label><div style="position:relative"><input id="ad" autocomplete="off" autocapitalize="words" placeholder="Start typing the Tallahassee address" oninput="cs()"><div class="sug" id="adsug" hidden></div></div><label>Customer email</label><input id="em" type="email" inputmode="email" autocomplete="off" placeholder="Saved on the job" oninput="cs()"><label>Customer phone (optional)</label><input id="ph" type="tel" inputmode="tel" autocomplete="off" placeholder="For call and text from Customers" oninput="cs()">${TEST_MODE ? `<p class="muted">Test mode is on. This address is stored on the job. The estimate email goes only to ${esc(TEST_TO)}.</p>` : '<p class="muted">This email is where the estimate is sent.</p>'}`)}
 <label>Square footage</label><input id="sqft" inputmode="decimal" placeholder="480" oninput="livePrice()">
+<p id="ailabel" hidden style="font-weight:700;color:#9a3412;margin:8px 0 0">AI estimate, verify on site</p>
+<label>Known dimension (optional)</label><input id="known" autocomplete="off" placeholder="16 ft garage door">
+<input id="mf" type="file" accept="image/*" multiple hidden onchange="measurePhotos(this)">
+<button class="btn n" id="mbtn" type="button" onclick="$('#mf').click()">Measure from photo</button>
+<p id="ainote" class="muted" hidden></p>
 <label>Coating system</label><select id="system" onchange="livePrice()"><option value="">Choose a system</option>${SYSTEMS.map((s) => `<option>${esc(s)}</option>`).join('')}</select>
 <label>Color / flake</label><input id="color" placeholder="Dominion, Wolf Gray, custom blend">
 <label>Prep</label><div class="checks" id="prepbox">${PREP_OPTS.map((p) => `<label><input type="checkbox" value="${esc(p)}"> ${esc(p)}</label>`).join('')}</div>
