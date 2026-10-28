@@ -25,7 +25,8 @@ const gallery = [];
 let measureOn = false;
 let fillOn = false;
 const trips = [];
-let settings = { payLink: '', reviewLink: '', finLink: '', finMin: 1000, ocr: true, theme: 'dark', mileRate: 0.7, quoteBody: '', quoteSubject: '', quoteSign: '', form: null, galleryHide: [], qbo: { connected: false, env: 'sandbox' } };
+let settings = { payLink: '', reviewLink: '', finLink: '', finMin: 1000, ocr: true, theme: 'dark', mileRate: 0.7, quoteBody: '', quoteSubject: '', quoteSign: '', form: null, galleryHide: [], reminders: { on: false, test: true, testPhone: '' }, qbo: { connected: false, env: 'sandbox' } };
+const callLog = [];
 let seq = 1;
 let rcSeq = 1;
 const OWNER_PIN = Object.keys(sandbox.ROLES || {}).find((k) => sandbox.ROLES[k] === 'Owner') || '';
@@ -106,6 +107,28 @@ function handle(d) {
       note: 'ZXAI double door about 16 ft, two bays'
     };
   }
+  if (d.a === 'remindtest') {
+    if (!pinOk(d)) return { ok: false, err: 'Wrong PIN' };
+    const phone = String(d.testPhone || (settings.reminders && settings.reminders.testPhone) || '').trim();
+    callLog.unshift({
+      id: 'RC' + (seq++),
+      at: new Date().toISOString(),
+      jobId: 'sample',
+      customer: 'Sample floor',
+      to: phone,
+      test: true,
+      sid: '',
+      status: '',
+      error: 'not configured',
+      forStart: '',
+      final: false
+    });
+    return { ok: true, called: false, error: 'not configured', callLog: callLog.slice(0, 80) };
+  }
+  if (d.a === 'remindinstall') {
+    if (!pinOk(d)) return { ok: false, err: 'Wrong PIN' };
+    return { ok: true, installed: true };
+  }
   if (d.a === 'feedback') {
     if (!pinOk(d)) return { ok: false, err: 'Wrong PIN' };
     const text = String(d.text || '').trim();
@@ -150,7 +173,14 @@ function handle(d) {
         quoteSign: String(d.quoteSign || '').trim().slice(0, 800),
         galleryHide: Array.isArray(d.galleryHide)
           ? [...new Set(d.galleryHide.map((id) => String(id || '').trim()).filter((id) => id.startsWith('sim-')))].slice(0, 200)
-          : (settings.galleryHide || [])
+          : (settings.galleryHide || []),
+        reminders: d.reminders && typeof d.reminders === 'object'
+          ? {
+              on: d.reminders.on === true,
+              test: d.reminders.test !== false,
+              testPhone: String(d.reminders.testPhone || '').trim().slice(0, 40)
+            }
+          : (settings.reminders || { on: false, test: true, testPhone: '' })
       };
       return { ok: true, settings };
     }
@@ -428,7 +458,7 @@ function start(port) {
         return;
       }
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: true, test: TEST_MODE, testMode: TEST_MODE, testTo: TEST_TO, root: 'https://drive.google.com/drive/folders/scc-root', jobs, blocks, settings, gallery }));
+      res.end(JSON.stringify({ ok: true, test: TEST_MODE, testMode: TEST_MODE, testTo: TEST_TO, root: 'https://drive.google.com/drive/folders/scc-root', jobs, blocks, settings, gallery, callLog }));
       return;
     }
     let rel = decodeURIComponent(url.pathname);

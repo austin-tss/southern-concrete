@@ -2,7 +2,7 @@
 let API = new URLSearchParams(location.search).get('api') || localStorage.sccApi || API_URL || '';
 if (API) localStorage.sccApi = API;
 
-let blocks = [], role = sessionStorage.sccRole || '', jobs = [], root = '', cur = null, pin = '', photos = [];
+let blocks = [], role = sessionStorage.sccRole || '', jobs = [], root = '', cur = null, pin = '', photos = [], CALLS = [];
 let serverTest = null, view = '', SET = {}, EXP = [], EXPL = false, EXPLOAD = false, PAYING = '', PAYM = 'check', CK = '', CQ = '', CL = [], SQ = '', tab = 'est';
 let RC = null, RCT = 0, RQ = [];
 let jtab = 'job', jtabFor = null, editId = '';
@@ -145,6 +145,7 @@ async function refresh() {
     if (d.settings) SET = d.settings;
     syncTheme();
     if (Array.isArray(d.gallery)) GALS = d.gallery;
+    if (Array.isArray(d.callLog)) CALLS = d.callLog;
     const bar = $('#testbar');
     if (bar) bar.hidden = !TEST_MODE && serverTest !== true;
   } catch (e) { toast(e.message); }
@@ -1463,6 +1464,7 @@ ${specLine ? '<p style="font-size:18px">' + esc(specLine) + '</p>' : ''}
 <p><span class="badge" style="background:${SC[stat(j)] || '#8a8f98'}">${ST[stat(j)] || esc(j.status)}</span> ${cfBadge(j)}${j.invoice ? ` <span class="badge ${paid ? 'paid' : 'open'}">${paid ? 'PAID' : 'OPEN'}</span>` : ''}</p>
 ${av(j) ? '<p style="font-size:17px">🕒 <b>Customer prefers:</b> ' + esc(av(j)) + '</p>' : ''}
 ${TEST_MODE ? `<p class="muted">Test mode: emails go only to ${esc(TEST_TO)}</p>` : ''}</div>`;
+  h += remindCard(j);
   h += jobTabs(j);
   if (jtab === 'notes') {
     h += notesPane(j);
@@ -1962,6 +1964,9 @@ function setSumText() {
   write('mail', stock ? 'Default wording' : clipLine(first || sub, 'Default wording'));
   const hiddenN = galleryHideList().length;
   write('gal', hiddenN ? hiddenN + ' hidden' : 'None hidden');
+  const remOn = $('#remon') ? $('#remon').checked : !!(SET && SET.reminders && SET.reminders.on);
+  const remTest = $('#remtest') ? $('#remtest').checked : !(SET && SET.reminders && SET.reminders.test === false);
+  write('rem', (remOn ? 'On' : 'Off') + (remTest ? ' · test mode' : ' · live'));
 }
 function tgSet(id) {
   const e = document.getElementById('srow-' + id);
@@ -2019,6 +2024,68 @@ function resetForm() {
   FORM = SCCQuote.defaultForm();
   setScreen();
 }
+function callWhen(iso) {
+  try { return new Date(iso).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); }
+  catch (e) { return String(iso || ''); }
+}
+function remindLine(c) {
+  const who = c.test ? 'Test' : 'Live';
+  const num = c.to ? fmtPh(c.to) : '';
+  const outcome = c.error || c.status || 'sent';
+  return `<p style="margin:6px 0">${esc(callWhen(c.at))} · ${esc(who)}${num ? ' · ' + esc(num) : ''} · ${esc(outcome)}${c.sid ? ' · ' + esc(c.sid) : ''}</p>`;
+}
+function remindCard(j) {
+  const rows = (CALLS || []).filter((c) => c.jobId === j.id);
+  const rem = j.reminded || {};
+  const head = rem.forStart ? `<p class="muted" style="margin:0 0 6px">Marked reminded for ${esc(String(rem.forStart).replace('T', ' '))}${rem.status ? ' · ' + esc(rem.status) : ''}</p>` : '';
+  const body = rows.length ? rows.slice(0, 6).map(remindLine).join('') : '<p class="muted" style="margin:0">No reminder call yet.</p>';
+  return `<div class="card" id="remindcard"><h2>Reminder call</h2>${head}${body}</div>`;
+}
+function remindLogHtml() {
+  const rows = (CALLS || []).slice(0, 12);
+  if (!rows.length) return '<p class="muted" id="remlog">No reminder calls yet.</p>';
+  return '<div id="remlog">' + rows.map((c) => {
+    const who = c.test ? 'Test' : 'Live';
+    const num = c.to ? fmtPh(c.to) : '';
+    const outcome = c.error || c.status || 'sent';
+    return `<p style="margin:6px 0">${esc(callWhen(c.at))} · ${esc(c.customer || c.jobId || 'Call')} · ${esc(who)}${num ? ' · ' + esc(num) : ''} · ${esc(outcome)}</p>`;
+  }).join('') + '</div>';
+}
+function remindRow() {
+  const r = (SET && SET.reminders) || {};
+  const on = r.on === true;
+  const test = r.test !== false;
+  return srow('rem', 'Reminder calls', `<p class="muted" style="margin:0 0 8px">One call about a day before a scheduled start. Off until you turn it on.</p>
+<label class="checks"><span style="display:flex;gap:10px;align-items:center"><input type="checkbox" id="remon" ${on ? 'checked' : ''} onchange="setSumText()"> Reminder calls on</span></label>
+<label class="checks"><span style="display:flex;gap:10px;align-items:center"><input type="checkbox" id="remtest" ${test ? 'checked' : ''} onchange="setSumText()"> Test mode</span></label>
+<p class="muted" style="margin:6px 0">Test mode is on by default. Every call goes only to the test phone, never the customer. Customer numbers are used only when reminder calls are on and test mode is off.</p>
+<label>Test phone</label><input id="remph" type="tel" inputmode="tel" autocomplete="tel" placeholder="(850) 555-0100" value="${esc(r.testPhone || '')}" oninput="setSumText()">
+<button class="btn n" id="remtestbtn" type="button" onclick="remindTest()">Send test call now</button>
+<button class="btn gr" id="reminstall" type="button" onclick="remindInstall()">Install hourly check</button>
+<h3 style="margin:12px 0 6px">Reminder call log</h3>
+${remindLogHtml()}`);
+}
+async function remindTest() {
+  const phone = ($('#remph') && $('#remph').value.trim()) || '';
+  const b = $('#remtestbtn');
+  if (b) { b.disabled = true; b.textContent = 'Calling…'; }
+  try {
+    await saveSet(true);
+    const r = await api({ a: 'remindtest', pin: ownerPin(), testPhone: phone });
+    if (Array.isArray(r.callLog)) CALLS = r.callLog;
+    toast(r.called ? 'Test call placed' : (r.error || 'Test call not placed'));
+  } catch (e) { toast(e.message); }
+  if (view === 'set') setScreen();
+}
+async function remindInstall() {
+  const b = $('#reminstall');
+  if (b) { b.disabled = true; b.textContent = 'Installing…'; }
+  try {
+    await api({ a: 'remindinstall', pin: ownerPin() });
+    toast('Hourly check installed');
+  } catch (e) { toast(e.message); }
+  if (b) { b.disabled = false; b.textContent = 'Install hourly check'; }
+}
 function qboRow() {
   const q = (SET && SET.qbo) || {};
   return srow('qbo', 'QuickBooks', `<p class="muted" style="margin:0 0 8px">${q.connected ? 'Connected' : 'Not connected'} · ${esc(q.env || 'sandbox')}</p>
@@ -2052,7 +2119,12 @@ function setPayload() {
     quoteSign: $('#qsign') ? $('#qsign').value.trim() : ((SET && SET.quoteSign) || ''),
     theme: themeName(),
     form: FORM || formCfg(),
-    galleryHide: galleryHideList()
+    galleryHide: galleryHideList(),
+    reminders: {
+      on: $('#remon') ? $('#remon').checked : !!(SET && SET.reminders && SET.reminders.on),
+      test: $('#remtest') ? $('#remtest').checked : (SET && SET.reminders ? SET.reminders.test !== false : true),
+      testPhone: $('#remph') ? $('#remph').value.trim() : ((SET && SET.reminders && SET.reminders.testPhone) || '')
+    }
   };
 }
 function pickTheme(name) {
@@ -2082,6 +2154,7 @@ ${srow('mail', 'Customer email', `<p class="muted" style="margin:0 0 8px">This w
 ${srow('form', 'Quote form', formEditorHtml())}
 ${srow('gal', 'Gallery photos', `<p class="muted" style="margin:0 0 8px">Photos you upload are removed for good. Built-in swatches stay hidden until you restore them.</p>
 <button class="btn gr" id="grestore" type="button" onclick="restoreGallery()">Restore deleted photos</button>`)}
+${remindRow()}
 ${qboRow()}
 <button class="btn huge" id="ss" type="button" onclick="saveSet()">Save settings</button>`;
   setSumText();

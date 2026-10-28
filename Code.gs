@@ -771,7 +771,8 @@ function settings_() {
     payLink: String(o.payLink || ''), reviewLink: String(o.reviewLink || ''), finLink: String(o.finLink || ''), finMin: min, ocr: o.ocr === false ? false : true, qbo: qboPublic_(),
     form: normalizeForm(o.form), mileRate: mileRate_(o.mileRate), theme: o.theme === 'classic' ? 'classic' : 'dark',
     quoteBody: String(o.quoteBody || ''), quoteSubject: String(o.quoteSubject || ''), quoteSign: String(o.quoteSign || ''),
-    galleryHide: galleryHide_(o.galleryHide)
+    galleryHide: galleryHide_(o.galleryHide),
+    reminders: reminderCfg_(o)
   };
 }
 function moneyNum_(v) {
@@ -812,6 +813,59 @@ function galleryHide_(v) {
     out.push(id);
   }
   return out;
+}
+function e164_(raw) {
+  var d = String(raw == null ? '' : raw).replace(/\D/g, '');
+  if (d.length === 10) return '+1' + d;
+  if (d.length === 11 && d.charAt(0) === '1') return '+' + d;
+  return '';
+}
+function reminderCfg_(o) {
+  var r = o && o.reminders;
+  return {
+    on: !!(r && r.on === true),
+    test: !r || r.test !== false,
+    testPhone: String((r && r.testPhone) || '').slice(0, 40)
+  };
+}
+function reminderDial_(s, customerPhone) {
+  var on = !!(s && s.on);
+  var test = !s || s.test !== false;
+  var testPhone = e164_(s && s.testPhone);
+  var cust = e164_(customerPhone);
+  if (!on) return { skip: 'off' };
+  if (test) {
+    if (!testPhone) return { skip: 'no test number' };
+    return { dial: testPhone, test: true };
+  }
+  if (!cust) return { skip: 'no phone' };
+  return { dial: cust, test: false };
+}
+function guardDial_(choice, testPhone, customerPhone) {
+  if (!choice || choice.skip || !choice.dial) return false;
+  if (choice.test) return choice.dial === e164_(testPhone);
+  return choice.dial === e164_(customerPhone);
+}
+function reminderDue_(startMs, nowMs) {
+  var h = (Number(startMs) - Number(nowMs)) / 36e5;
+  return h >= 20 && h <= 28;
+}
+function reminderSay_(jobName, dateLabel, timeLabel, address) {
+  var line = 'Hi, this is Southern Concrete Coatings reminding you of your appointment for ' + (jobName || 'your floor') + ' on ' + dateLabel + ' at ' + timeLabel;
+  address = String(address || '').replace(/\s+/g, ' ').trim();
+  if (address) line += ' at ' + address;
+  line += '. Call us if you need to reschedule.';
+  return line;
+}
+function xmlEsc_(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function reminderTwiml_(text) {
+  return '<Response><Say voice="alice">' + xmlEsc_(text) + '</Say></Response>';
+}
+function reminderFinal_(status) {
+  var s = String(status || '');
+  return s === 'completed' || s === 'busy' || s === 'failed' || s === 'no-answer' || s === 'canceled';
 }
 function scriptProp_(name) {
   try {
@@ -1520,7 +1574,7 @@ function doGet(e) {
     } finally { L.releaseLock(); }
     return page_(responseThanksHtml({ co: CO, colors: COLORS, job: j }));
   }
-  return out_({ ok: true, test: TEST_MODE, testMode: TEST_MODE, testTo: TEST_MODE ? TEST_TO : '', root: root_().getUrl(), jobs: load_(), blocks: load_('blocks.json'), settings: settings_(), gallery: gallery_() });
+  return out_({ ok: true, test: TEST_MODE, testMode: TEST_MODE, testTo: TEST_MODE ? TEST_TO : '', root: root_().getUrl(), jobs: load_(), blocks: load_('blocks.json'), settings: settings_(), gallery: gallery_(), callLog: callLog_().slice(0, 80) });
 }
 function numField_(v) {
   if (v == null || v === '') return '';
@@ -1666,6 +1720,15 @@ function doPost(e) {
       mailFeedback_(fbList[fbList.length - 1]);
       return out_({ ok: true });
     }
+    if (d.a === 'remindtest' || d.a === 'remindinstall') {
+      if (!pinOk_(d)) return out_({ ok: false, err: 'Wrong PIN' });
+      if (d.a === 'remindinstall') {
+        try { installReminderTrigger(); }
+        catch (eInst) { return out_({ ok: false, err: String(eInst.message || eInst).slice(0, 180) }); }
+        return out_({ ok: true, installed: true });
+      }
+      return out_(remindTest_(d.testPhone));
+    }
     if (d.a === 'settings' || d.a === 'explist' || d.a === 'expadd' || d.a === 'expdel' || d.a === 'rcscan' || d.a === 'rcrescan' || d.a === 'rcdrop') {
       if (!pinOk_(d)) return out_({ ok: false, err: 'Wrong PIN' });
       if (d.a === 'settings') {
@@ -1683,6 +1746,7 @@ function doPost(e) {
         curS.quoteSubject = String(d.quoteSubject || '').trim().slice(0, 300);
         curS.quoteSign = String(d.quoteSign || '').trim().slice(0, 800);
         if (Array.isArray(d.galleryHide)) curS.galleryHide = galleryHide_(d.galleryHide);
+        if (d.reminders && typeof d.reminders === 'object') curS.reminders = reminderCfg_({ reminders: d.reminders });
         save_(curS, 'settings.json');
         return out_({ ok: true, settings: settings_() });
       }
@@ -1876,4 +1940,321 @@ function doPost(e) {
   } finally { L.releaseLock(); }
   return out_({ ok: true, testMode: TEST_MODE, job: j });
 }
-function setup() { Logger.log(root_().getUrl()); }
+var REM_DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+var REM_MON = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+var REM_DONE = { declined: 1, complete: 1, invoiced: 1 };
+var REM_N = 0;
+function callLog_() {
+  var list = load_('reminders.json');
+  return Array.isArray(list) ? list : [];
+}
+function saveCallLog_(list) {
+  if (!Array.isArray(list)) list = [];
+  if (list.length > 200) list = list.slice(0, 200);
+  save_(list, 'reminders.json');
+}
+function logReminder_(row) {
+  var list = callLog_();
+  var err = String(row && row.error || '');
+  if (err === 'not configured' && list.length && list[0].error === 'not configured') {
+    var prev = Date.parse(list[0].at || '');
+    if (!isNaN(prev) && Date.now() - prev < 6 * 36e5) return list;
+  }
+  list.unshift({
+    id: 'RC' + Date.now().toString(36).toUpperCase() + (REM_N++),
+    at: new Date().toISOString(),
+    jobId: String(row && row.jobId || '').slice(0, 40),
+    customer: String(row && row.customer || '').slice(0, 120),
+    to: String(row && row.to || '').slice(0, 20),
+    test: !!(row && row.test),
+    sid: String(row && row.sid || '').slice(0, 64),
+    status: String(row && row.status || '').slice(0, 40),
+    error: err.slice(0, 180),
+    forStart: String(row && row.forStart || '').slice(0, 40),
+    final: !!(row && (row.final || reminderFinal_(row.status)))
+  });
+  if (list.length > 200) list = list.slice(0, 200);
+  saveCallLog_(list);
+  return list;
+}
+function alreadyLogged_(list, jobId, forStart, error) {
+  var i;
+  for (i = 0; i < list.length; i++) {
+    if (list[i].jobId === jobId && list[i].forStart === forStart && list[i].error === error) return true;
+  }
+  return false;
+}
+function twilioCreds_() {
+  var sid = scriptProp_('TWILIO_SID');
+  var token = scriptProp_('TWILIO_TOKEN');
+  var from = e164_(scriptProp_('TWILIO_FROM'));
+  if (!sid || !token || !from) return null;
+  return { sid: sid, token: token, from: from };
+}
+function twilioAuth_(creds) {
+  return 'Basic ' + Utilities.base64Encode(creds.sid + ':' + creds.token);
+}
+function twilioClip_(msg, creds) {
+  var s = clipErr_(msg, creds && creds.token);
+  s = clipErr_(s, creds && creds.sid);
+  return s.slice(0, 180) || 'call failed';
+}
+function twilioCall_(creds, to, say) {
+  var url = 'https://api.twilio.com/2010-04-01/Accounts/' + encodeURIComponent(creds.sid) + '/Calls.json';
+  var res = UrlFetchApp.fetch(url, {
+    method: 'post',
+    muteHttpExceptions: true,
+    headers: { Authorization: twilioAuth_(creds) },
+    payload: { To: to, From: creds.from, Twiml: reminderTwiml_(say) }
+  });
+  var code = res.getResponseCode();
+  var body = res.getContentText() || '';
+  var parsed = {};
+  try { parsed = JSON.parse(body) || {}; } catch (e) { parsed = {}; }
+  if (code < 200 || code >= 300 || !parsed.sid) return { ok: false, error: twilioClip_(parsed.message || body || ('HTTP ' + code), creds) };
+  return { ok: true, sid: String(parsed.sid), status: String(parsed.status || 'queued') };
+}
+function twilioStatus_(creds, sid) {
+  var url = 'https://api.twilio.com/2010-04-01/Accounts/' + encodeURIComponent(creds.sid) + '/Calls/' + encodeURIComponent(sid) + '.json';
+  var res = UrlFetchApp.fetch(url, {
+    method: 'get',
+    muteHttpExceptions: true,
+    headers: { Authorization: twilioAuth_(creds) }
+  });
+  if (res.getResponseCode() < 200 || res.getResponseCode() >= 300) return '';
+  try { return String((JSON.parse(res.getContentText() || '{}') || {}).status || ''); }
+  catch (e) { return ''; }
+}
+function etDate_(ymd, hm) {
+  var p = String(hm || '08:00').split(':');
+  var hh = ('0' + (parseInt(p[0], 10) || 0)).slice(-2);
+  var mm = ('0' + (parseInt(p[1], 10) || 0)).slice(-2);
+  var y = String(ymd || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(y)) return null;
+  try { return Utilities.parseDate(y + ' ' + hh + ':' + mm + ':00', 'America/New_York', 'yyyy-MM-dd HH:mm:ss'); }
+  catch (e) { return null; }
+}
+function addEtDays_(ymd, days) {
+  var noon = etDate_(ymd, '12:00');
+  if (!noon) return '';
+  return Utilities.formatDate(new Date(noon.getTime() + days * 86400000), 'America/New_York', 'yyyy-MM-dd');
+}
+function etDow_(ymd) {
+  var noon = etDate_(ymd, '12:00');
+  if (!noon) return -1;
+  var eee = Utilities.formatDate(noon, 'America/New_York', 'EEE').toLowerCase();
+  var i;
+  for (i = 0; i < REM_DAYS.length; i++) if (REM_DAYS[i].indexOf(eee) === 0) return i;
+  return -1;
+}
+function whenClock_(text) {
+  var t = String(text || '').toLowerCase();
+  var m = t.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/);
+  var h, min;
+  if (m) {
+    h = parseInt(m[1], 10);
+    min = parseInt(m[2] || '0', 10) || 0;
+    if (m[3] === 'pm' && h < 12) h += 12;
+    if (m[3] === 'am' && h === 12) h = 0;
+    if (h > 23 || min > 59) return '08:00';
+    return ('0' + h).slice(-2) + ':' + ('0' + min).slice(-2);
+  }
+  var at = t.match(/\bat\s+(\d{1,2})(?::(\d{2}))?\b/);
+  if (at) {
+    h = parseInt(at[1], 10);
+    min = parseInt(at[2] || '0', 10) || 0;
+    if (h < 7) h += 12;
+    if (h > 23 || min > 59) return '08:00';
+    return ('0' + h).slice(-2) + ':' + ('0' + min).slice(-2);
+  }
+  if (/\bafternoon\b/.test(t)) return '12:00';
+  return '08:00';
+}
+function whenYmd_(text, todayYmd, nowMs) {
+  var t = String(text || '').toLowerCase();
+  var year = parseInt(String(todayYmd).slice(0, 4), 10);
+  if (!year) return '';
+  var md = t.match(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/);
+  var mo, da, y, ymd, i, mon, dn, hit, hits, dow, delta, clock, startToday;
+  if (md) {
+    mo = parseInt(md[1], 10);
+    da = parseInt(md[2], 10);
+    y = md[3] ? parseInt(md[3], 10) : year;
+    if (y < 100) y += 2000;
+    if (mo < 1 || mo > 12 || da < 1 || da > 31) return '';
+    ymd = y + '-' + ('0' + mo).slice(-2) + '-' + ('0' + da).slice(-2);
+    if (!md[3] && ymd < todayYmd) ymd = (y + 1) + '-' + ('0' + mo).slice(-2) + '-' + ('0' + da).slice(-2);
+    return ymd;
+  }
+  mon = -1;
+  dn = 0;
+  for (i = 0; i < REM_MON.length; i++) {
+    hit = t.match(new RegExp('\\b' + REM_MON[i].slice(0, 3) + '[a-z]*\\.?\\s+(\\d{1,2})\\b'));
+    if (hit) { mon = i + 1; dn = parseInt(hit[1], 10); break; }
+  }
+  if (mon > 0 && dn >= 1 && dn <= 31) {
+    ymd = year + '-' + ('0' + mon).slice(-2) + '-' + ('0' + dn).slice(-2);
+    if (ymd < todayYmd) ymd = (year + 1) + '-' + ('0' + mon).slice(-2) + '-' + ('0' + dn).slice(-2);
+    return ymd;
+  }
+  if (/\btomorrow\b/.test(t)) return addEtDays_(todayYmd, 1);
+  hits = [];
+  for (i = 0; i < REM_DAYS.length; i++) if (new RegExp('\\b' + REM_DAYS[i] + '\\b').test(t)) hits.push(i);
+  if (hits.length !== 1) return '';
+  dow = etDow_(todayYmd);
+  if (dow < 0) return '';
+  delta = (hits[0] - dow + 7) % 7;
+  clock = whenClock_(t);
+  if (delta === 0) {
+    startToday = etDate_(todayYmd, clock);
+    if (!(startToday && startToday.getTime() > nowMs)) delta = 7;
+  }
+  if (!delta) return todayYmd;
+  return addEtDays_(todayYmd, delta);
+}
+function jobLabel_(j) {
+  var name = String(j && j.name || '').replace(/\s+/g, ' ').trim();
+  var system = String(j && j.system || '').replace(/\s+/g, ' ').trim();
+  var line = name && system ? name + ', ' + system : (name || system || 'your floor');
+  return line.slice(0, 80);
+}
+function jobAppt_(job, blocks, now) {
+  if (!job || REM_DONE[job.status]) return null;
+  var nowMs = now.getTime();
+  var best = null, bestMs = 0, i, b, start, ms, when, today, ymd;
+  var list = Array.isArray(blocks) ? blocks : [];
+  for (i = 0; i < list.length; i++) {
+    b = list[i];
+    if (!b || b.job !== job.id || !b.date || !b.start) continue;
+    start = etDate_(String(b.date).slice(0, 10), String(b.start).slice(0, 5));
+    if (!start) continue;
+    ms = start.getTime();
+    if (ms <= nowMs) continue;
+    if (!best || ms < bestMs) { best = start; bestMs = ms; }
+  }
+  if (!best && job.status === 'approved') {
+    when = String((job.response && job.response.when) || '').trim();
+    today = Utilities.formatDate(now, 'America/New_York', 'yyyy-MM-dd');
+    ymd = whenYmd_(when, today, nowMs);
+    if (ymd) best = etDate_(ymd, whenClock_(when));
+  }
+  if (!best || best.getTime() <= nowMs) return null;
+  return {
+    start: best,
+    key: Utilities.formatDate(best, 'America/New_York', "yyyy-MM-dd'T'HH:mm"),
+    dateLabel: Utilities.formatDate(best, 'America/New_York', 'EEEE, MMMM d'),
+    timeLabel: Utilities.formatDate(best, 'America/New_York', 'h:mm a')
+  };
+}
+function pollReminders_(creds, jobs, log) {
+  var changed = false, now = Date.now(), i, row, at, status, j;
+  for (i = 0; i < log.length; i++) {
+    row = log[i];
+    if (!row || !row.sid || row.final) continue;
+    at = Date.parse(row.at || '');
+    if (isNaN(at) || now - at > 36 * 36e5) continue;
+    status = twilioStatus_(creds, row.sid);
+    if (!status || status === row.status) continue;
+    row.status = status;
+    if (reminderFinal_(status)) row.final = true;
+    changed = true;
+    for (j = 0; j < jobs.length; j++) {
+      if (jobs[j].reminded && jobs[j].reminded.sid === row.sid) jobs[j].reminded.status = status;
+    }
+  }
+  return changed;
+}
+function runRemindersLocked_() {
+  var cfg = reminderCfg_(loadObj_('settings.json'));
+  if (!cfg.on) return { ok: true, skipped: 'off' };
+  var creds = twilioCreds_();
+  var jobs = load_();
+  var blocks = load_('blocks.json');
+  if (!Array.isArray(jobs)) jobs = [];
+  if (!Array.isArray(blocks)) blocks = [];
+  var log = callLog_();
+  var jobsChanged = false;
+  if (creds && pollReminders_(creds, jobs, log)) {
+    saveCallLog_(log);
+    jobsChanged = true;
+  }
+  if (!creds) {
+    logReminder_({ jobId: '', customer: '', to: '', test: cfg.test !== false, error: 'not configured', status: '' });
+    if (jobsChanged) save_(jobs);
+    return { ok: true, called: false, error: 'not configured' };
+  }
+  var now = new Date(), i, j, appt, choice, say, made;
+  for (i = 0; i < jobs.length; i++) {
+    j = jobs[i];
+    appt = jobAppt_(j, blocks, now);
+    if (!appt || !reminderDue_(appt.start.getTime(), now.getTime())) continue;
+    if (j.reminded && j.reminded.forStart === appt.key) continue;
+    choice = reminderDial_(cfg, j.phone);
+    if (!guardDial_(choice, cfg.testPhone, j.phone)) {
+      if (choice && (choice.skip === 'no phone' || choice.skip === 'no test number') && !alreadyLogged_(log, j.id, appt.key, choice.skip)) {
+        log = logReminder_({ jobId: j.id, customer: j.name || '', to: '', test: cfg.test !== false, error: choice.skip, forStart: appt.key, status: 'skipped' });
+      }
+      continue;
+    }
+    say = reminderSay_(jobLabel_(j), appt.dateLabel, appt.timeLabel, j.address || '');
+    try { made = twilioCall_(creds, choice.dial, say); }
+    catch (eCall) { made = { ok: false, error: String(eCall.message || eCall).slice(0, 180) }; }
+    log = logReminder_({
+      jobId: j.id, customer: j.name || '', to: choice.dial, test: !!choice.test,
+      sid: made.sid || '', status: made.status || '', error: made.error || '',
+      forStart: appt.key, final: reminderFinal_(made.status)
+    });
+    if (made.ok && made.sid) {
+      j.reminded = { at: new Date().toISOString(), forStart: appt.key, sid: made.sid, status: made.status || 'queued', to: choice.dial, test: !!choice.test };
+      jobsChanged = true;
+    }
+  }
+  if (jobsChanged) save_(jobs);
+  return { ok: true };
+}
+function remindDue_() {
+  var L = LockService.getScriptLock();
+  try { L.waitLock(25000); } catch (eLock) { return; }
+  try { runRemindersLocked_(); }
+  catch (e) {
+    try { logReminder_({ jobId: '', customer: '', to: '', test: false, error: String(e && e.message || e).slice(0, 180), status: 'error' }); } catch (e2) {}
+  } finally { try { L.releaseLock(); } catch (e3) {} }
+}
+function remindTest_(testPhoneRaw) {
+  var phone = e164_(testPhoneRaw) || e164_(reminderCfg_(loadObj_('settings.json')).testPhone);
+  var now = new Date();
+  var today = Utilities.formatDate(now, 'America/New_York', 'yyyy-MM-dd');
+  var start = etDate_(addEtDays_(today, 1), '08:00');
+  var say = reminderSay_('Sample floor', Utilities.formatDate(start, 'America/New_York', 'EEEE, MMMM d'), Utilities.formatDate(start, 'America/New_York', 'h:mm a'), '1200 Call Street, Tallahassee, FL');
+  var creds, made, log;
+  if (!phone) {
+    log = logReminder_({ jobId: 'sample', customer: 'Sample floor', to: '', test: true, error: 'no test number', status: 'skipped' });
+    return { ok: true, called: false, error: 'no test number', callLog: log.slice(0, 80) };
+  }
+  creds = twilioCreds_();
+  if (!creds) {
+    log = logReminder_({ jobId: 'sample', customer: 'Sample floor', to: phone, test: true, error: 'not configured', status: '' });
+    return { ok: true, called: false, error: 'not configured', callLog: log.slice(0, 80) };
+  }
+  try { made = twilioCall_(creds, phone, say); }
+  catch (e) { made = { ok: false, error: String(e.message || e).slice(0, 180) }; }
+  log = logReminder_({
+    jobId: 'sample', customer: 'Sample floor', to: phone, test: true,
+    sid: made.sid || '', status: made.status || '', error: made.error || '',
+    forStart: Utilities.formatDate(start, 'America/New_York', "yyyy-MM-dd'T'HH:mm"),
+    final: reminderFinal_(made.status)
+  });
+  return { ok: true, called: !!made.ok, sid: made.sid || '', status: made.status || '', error: made.error || '', callLog: log.slice(0, 80) };
+}
+function installReminderTrigger() {
+  var triggers = ScriptApp.getProjectTriggers();
+  var i;
+  for (i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'remindDue_') ScriptApp.deleteTrigger(triggers[i]);
+  }
+  ScriptApp.newTrigger('remindDue_').timeBased().everyHours(1).create();
+}
+function setup() {
+  Logger.log(root_().getUrl());
+  installReminderTrigger();
+}
