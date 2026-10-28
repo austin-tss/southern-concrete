@@ -188,6 +188,7 @@ function customerJob(j){
   delete o.aiNote;
   delete o.phone2;
   delete o.contact2;
+  delete o.callAnswers;
   if (Array.isArray(o.items)) {
     var vis = o.items.filter(function (it) { return !(it && it.internal); });
     if (vis.length !== o.items.length) {
@@ -636,6 +637,7 @@ function view_(j) {
   delete o.aiNote;
   delete o.phone2;
   delete o.contact2;
+  delete o.callAnswers;
   return o;
 }
 function logoBlob_() {
@@ -820,12 +822,25 @@ function e164_(raw) {
   if (d.length === 11 && d.charAt(0) === '1') return '+' + d;
   return '';
 }
+function questionsFrom_(list) {
+  var fallback = [{ text: 'Will the driveway or work area be cleared before we arrive?', type: 'yesno' }];
+  if (!Array.isArray(list)) return fallback;
+  var out = [], i, text, type;
+  for (i = 0; i < list.length && out.length < 8; i++) {
+    text = String((list[i] && list[i].text) || '').replace(/\s+/g, ' ').trim().slice(0, 240);
+    if (!text) continue;
+    type = list[i] && list[i].type === 'speech' ? 'speech' : 'yesno';
+    out.push({ text: text, type: type });
+  }
+  return out;
+}
 function reminderCfg_(o) {
   var r = o && o.reminders;
   return {
     on: !!(r && r.on === true),
     test: !r || r.test !== false,
-    testPhone: String((r && r.testPhone) || '').slice(0, 40)
+    testPhone: String((r && r.testPhone) || '').slice(0, 40),
+    questions: (r && Array.isArray(r.questions)) ? questionsFrom_(r.questions) : questionsFrom_(null)
   };
 }
 function reminderDial_(s, customerPhone) {
@@ -865,6 +880,91 @@ function xmlEsc_(s) {
 }
 function reminderTwiml_(text) {
   return '<Response><Say voice="alice">' + xmlEsc_(text) + '</Say></Response>';
+}
+function goodbyeTwiml_() {
+  return '<Say voice="alice">' + xmlEsc_('Thanks, see you then. Call us if anything changes.') + '</Say>';
+}
+function questionPrompt_(q) {
+  var line = String(q && q.text || '').replace(/\s+/g, ' ').trim();
+  if (!q || q.type !== 'speech') line += ' Press 1 for yes, 2 for no.';
+  line += ' Press 0 to request a callback.';
+  return line.replace(/\s+/g, ' ').trim();
+}
+function voiceMsg_(jobId, logId, qIndex) {
+  return String(jobId || '') + '|' + String(logId || '') + '|' + String(qIndex);
+}
+function voiceToken_(jobId, logId, qIndex, secret, sign) {
+  return sign(voiceMsg_(jobId, logId, qIndex), String(secret || ''));
+}
+function voiceOk_(jobId, logId, qIndex, token, secret, sign) {
+  if (!secret || !token || !sign) return false;
+  return voiceToken_(jobId, logId, qIndex, secret, sign) === String(token);
+}
+function voiceUrl_(base, jobId, logId, qIndex, token) {
+  var b = String(base || '').replace(/\?.*$/, '').replace(/\/$/, '');
+  return b + '?a=twvoice&job=' + encodeURIComponent(jobId || '') + '&log=' + encodeURIComponent(logId || '') + '&q=' + encodeURIComponent(String(qIndex)) + '&tok=' + encodeURIComponent(token || '');
+}
+function gatherXml_(q, action) {
+  return '<Gather input="dtmf speech" numDigits="1" timeout="6" speechTimeout="auto" method="GET" action="' + xmlEsc_(action) + '"><Say voice="alice">' + xmlEsc_(questionPrompt_(q)) + '</Say></Gather>';
+}
+function openingTwiml_(intro, questions, action) {
+  var qs = Array.isArray(questions) ? questions : [];
+  var xml = '<Response>';
+  if (intro) xml += '<Say voice="alice">' + xmlEsc_(intro) + '</Say>';
+  if (qs.length && action) xml += gatherXml_(qs[0], action);
+  xml += goodbyeTwiml_();
+  xml += '</Response>';
+  return xml;
+}
+function callTwiml_(intro, questions, jobId, logId, secret, base, sign) {
+  var qs = Array.isArray(questions) ? questions : [];
+  var action = '';
+  if (qs.length && base && secret && sign) action = voiceUrl_(base, jobId, logId, 0, voiceToken_(jobId, logId, 0, secret, sign));
+  return openingTwiml_(intro, qs, action);
+}
+function voiceAnswer_(type, digits, speech) {
+  var d = String(digits == null ? '' : digits).replace(/\D/g, '');
+  var key = d ? d.charAt(0) : '';
+  var said = String(speech == null ? '' : speech).replace(/\s+/g, ' ').trim().slice(0, 500);
+  var low = said.toLowerCase();
+  if (key === '0') return { answer: '', callback: true };
+  if (low && /\b(callback|call me back)\b/.test(low) && (type === 'speech' ? said.length < 40 : true)) return { answer: '', callback: true };
+  if (type === 'speech') return said ? { answer: said, callback: false } : null;
+  if (key === '1') return { answer: 'yes', callback: false };
+  if (key === '2') return { answer: 'no', callback: false };
+  if (low && /\b(no|nope)\b/.test(low)) return { answer: 'no', callback: false };
+  if (low && /\b(yes|yeah|yep)\b/.test(low)) return { answer: 'yes', callback: false };
+  return null;
+}
+function voiceRejectTwiml_() {
+  return '<Response><Say voice="alice">Sorry, this reminder cannot continue.</Say><Hangup/></Response>';
+}
+function voiceStep_(opts) {
+  var o = opts || {};
+  var jobId = String(o.jobId || '');
+  var logId = String(o.logId || '');
+  var qIndex = parseInt(o.q, 10);
+  var sign = o.sign;
+  if (!sign || isNaN(qIndex) || qIndex < 0 || qIndex > 20 || !voiceOk_(jobId, logId, qIndex, o.tok, o.secret, sign)) {
+    return { ok: false, twiml: voiceRejectTwiml_(), save: null };
+  }
+  var qs = Array.isArray(o.questions) ? o.questions : [];
+  var question = qs[qIndex];
+  if (!question) return { ok: true, twiml: '<Response>' + goodbyeTwiml_() + '</Response>', save: null };
+  var parsed = voiceAnswer_(question.type, o.digits, o.speech);
+  var save = null;
+  if (parsed && (parsed.answer || parsed.callback)) {
+    save = {
+      q: question.text,
+      type: question.type === 'speech' ? 'speech' : 'yesno',
+      answer: parsed.answer || '',
+      callback: !!parsed.callback
+    };
+  }
+  var next = qIndex + 1;
+  if (next >= qs.length || !o.base) return { ok: true, twiml: '<Response>' + goodbyeTwiml_() + '</Response>', save: save };
+  var action = voiceUrl_(o.base, jobId, logId, next, voiceToken_(jobId, logId, next, o.secret, sign));
+  return { ok: true, twiml: '<Response>' + gatherXml_(qs[next], action) + goodbyeTwiml_() + '</Response>', save: save };
 }
 function reminderFinal_(status) {
   var s = String(status || '');
@@ -1545,6 +1645,7 @@ function qboQuietExp_(ex) { try { if (qboLoad_()) qboPurchase_(ex); } catch (eQ)
 function qboQuietCustomers_(list) { try { if (!qboLoad_()) return; (list || []).forEach(qboCustomer_); } catch (eQ) {} }
 function doGet(e) {
   var p = (e && e.parameter) || {};
+  if (p.a === 'twvoice') return twvoice_(p);
   if (p.code && p.state) return qboFinish_(p);
   if (p.a === 'logins') return out_({ ok: true, logins: load_('logins.json') });
   if (p.a === 'feedback') {
@@ -1601,7 +1702,10 @@ function cleanItems_(list) {
   return out;
 }
 function doPost(e) {
+  var peek = (e && e.parameter) || {};
+  if (peek.a === 'twvoice') return twvoice_(peek);
   var d = JSON.parse(e.postData.contents);
+  if (d && d.a === 'twvoice') return twvoice_(d);
   var L = LockService.getScriptLock();
   L.waitLock(30000);
   var j, send = null, js;
@@ -1750,7 +1854,13 @@ function doPost(e) {
         curS.quoteSubject = String(d.quoteSubject || '').trim().slice(0, 300);
         curS.quoteSign = String(d.quoteSign || '').trim().slice(0, 800);
         if (Array.isArray(d.galleryHide)) curS.galleryHide = galleryHide_(d.galleryHide);
-        if (d.reminders && typeof d.reminders === 'object') curS.reminders = reminderCfg_({ reminders: d.reminders });
+        if (d.reminders && typeof d.reminders === 'object') {
+          var postedR = d.reminders;
+          if (!Array.isArray(postedR.questions) && curS.reminders && Array.isArray(curS.reminders.questions)) {
+            postedR = { on: postedR.on, test: postedR.test, testPhone: postedR.testPhone, questions: curS.reminders.questions };
+          }
+          curS.reminders = reminderCfg_({ reminders: postedR });
+        }
         save_(curS, 'settings.json');
         return out_({ ok: true, settings: settings_() });
       }
@@ -1966,7 +2076,7 @@ function logReminder_(row) {
     if (!isNaN(prev) && Date.now() - prev < 6 * 36e5) return list;
   }
   list.unshift({
-    id: 'RC' + Date.now().toString(36).toUpperCase() + (REM_N++),
+    id: String((row && row.id) || ('RC' + Date.now().toString(36).toUpperCase() + (REM_N++))).slice(0, 48),
     at: new Date().toISOString(),
     jobId: String(row && row.jobId || '').slice(0, 40),
     customer: String(row && row.customer || '').slice(0, 120),
@@ -1977,7 +2087,11 @@ function logReminder_(row) {
     status: String(row && row.status || '').slice(0, 40),
     error: err.slice(0, 180),
     forStart: String(row && row.forStart || '').slice(0, 40),
-    final: !!(row && (row.final || reminderFinal_(row.status)))
+    final: !!(row && (row.final || reminderFinal_(row.status))),
+    questions: (row && Array.isArray(row.questions)) ? questionsFrom_(row.questions) : [],
+    answers: [],
+    no: false,
+    callback: false
   });
   if (list.length > 200) list = list.slice(0, 200);
   saveCallLog_(list);
@@ -2005,13 +2119,17 @@ function twilioClip_(msg, creds) {
   s = clipErr_(s, creds && creds.sid);
   return s.slice(0, 180) || 'call failed';
 }
-function twilioCall_(creds, to, say) {
+function voiceSign_(msg, secret) {
+  var raw = Utilities.computeHmacSha256Signature(String(msg), String(secret || ''));
+  return Utilities.base64EncodeWebSafe(raw).replace(/=+$/, '');
+}
+function twilioCall_(creds, to, twiml) {
   var url = 'https://api.twilio.com/2010-04-01/Accounts/' + encodeURIComponent(creds.sid) + '/Calls.json';
   var res = UrlFetchApp.fetch(url, {
     method: 'post',
     muteHttpExceptions: true,
     headers: { Authorization: twilioAuth_(creds) },
-    payload: { To: to, From: creds.from, Twiml: reminderTwiml_(say) }
+    payload: { To: to, From: creds.from, Twiml: twiml }
   });
   var code = res.getResponseCode();
   var body = res.getContentText() || '';
@@ -2019,6 +2137,11 @@ function twilioCall_(creds, to, say) {
   try { parsed = JSON.parse(body) || {}; } catch (e) { parsed = {}; }
   if (code < 200 || code >= 300 || !parsed.sid) return { ok: false, error: twilioClip_(parsed.message || body || ('HTTP ' + code), creds) };
   return { ok: true, sid: String(parsed.sid), status: String(parsed.status || 'queued') };
+}
+function placeReminder_(creds, to, intro, questions, jobId, logId) {
+  var base = '';
+  try { base = ScriptApp.getService().getUrl() || ''; } catch (eUrl) { base = ''; }
+  return twilioCall_(creds, to, callTwiml_(intro, questions, jobId, logId, creds.token, base, voiceSign_));
 }
 function twilioStatus_(creds, sid) {
   var url = 'https://api.twilio.com/2010-04-01/Accounts/' + encodeURIComponent(creds.sid) + '/Calls/' + encodeURIComponent(sid) + '.json';
@@ -2203,12 +2326,13 @@ function runRemindersLocked_() {
       continue;
     }
     say = reminderSay_(jobLabel_(j), appt.dateLabel, appt.timeLabel, j.address || '');
-    try { made = twilioCall_(creds, choice.dial, say); }
+    var logId = 'RC' + Date.now().toString(36).toUpperCase() + (REM_N++);
+    try { made = placeReminder_(creds, choice.dial, say, cfg.questions, j.id, logId); }
     catch (eCall) { made = { ok: false, error: String(eCall.message || eCall).slice(0, 180) }; }
     log = logReminder_({
-      jobId: j.id, customer: j.name || '', to: choice.dial, test: !!choice.test,
+      id: logId, jobId: j.id, customer: j.name || '', to: choice.dial, test: !!choice.test,
       sid: made.sid || '', status: made.status || '', error: made.error || '',
-      forStart: appt.key, final: reminderFinal_(made.status)
+      forStart: appt.key, final: reminderFinal_(made.status), questions: cfg.questions
     });
     if (made.ok && made.sid) {
       j.reminded = { at: new Date().toISOString(), forStart: appt.key, sid: made.sid, status: made.status || 'queued', to: choice.dial, test: !!choice.test };
@@ -2242,13 +2366,15 @@ function remindTest_(testPhoneRaw) {
     log = logReminder_({ jobId: 'sample', customer: 'Sample floor', to: phone, test: true, error: 'not configured', status: '' });
     return { ok: true, called: false, error: 'not configured', callLog: log.slice(0, 80) };
   }
-  try { made = twilioCall_(creds, phone, say); }
+  var logId = 'RC' + Date.now().toString(36).toUpperCase() + (REM_N++);
+  var qs = reminderCfg_(loadObj_('settings.json')).questions;
+  try { made = placeReminder_(creds, phone, say, qs, 'sample', logId); }
   catch (e) { made = { ok: false, error: String(e.message || e).slice(0, 180) }; }
   log = logReminder_({
-    jobId: 'sample', customer: 'Sample floor', to: phone, test: true,
+    id: logId, jobId: 'sample', customer: 'Sample floor', to: phone, test: true,
     sid: made.sid || '', status: made.status || '', error: made.error || '',
     forStart: Utilities.formatDate(start, 'America/New_York', "yyyy-MM-dd'T'HH:mm"),
-    final: reminderFinal_(made.status)
+    final: reminderFinal_(made.status), questions: qs
   });
   return { ok: true, called: !!made.ok, sid: made.sid || '', status: made.status || '', error: made.error || '', callLog: log.slice(0, 80) };
 }
@@ -2298,14 +2424,81 @@ function remindNow_(ids) {
     log = logReminder_({ jobId: jobId, customer: customer, to: phone, test: false, manual: true, error: 'not configured', status: '' });
     return { ok: true, called: false, error: 'not configured', callLog: log.slice(0, 80) };
   }
-  try { made = twilioCall_(creds, phone, say); }
+  var logId = 'RC' + Date.now().toString(36).toUpperCase() + (REM_N++);
+  var qs = questionsFrom_(((loadObj_('settings.json') || {}).reminders || {}).questions);
+  try { made = placeReminder_(creds, phone, say, qs, jobId, logId); }
   catch (eNow) { made = { ok: false, error: String(eNow.message || eNow).slice(0, 180) }; }
   log = logReminder_({
-    jobId: jobId, customer: customer, to: phone, test: false, manual: true,
+    id: logId, jobId: jobId, customer: customer, to: phone, test: false, manual: true,
     sid: made.sid || '', status: made.status || '', error: made.error || '',
-    forStart: forStart, final: reminderFinal_(made.status)
+    forStart: forStart, final: reminderFinal_(made.status), questions: qs
   });
   return { ok: true, called: !!made.ok, sid: made.sid || '', status: made.status || '', error: made.error || '', callLog: log.slice(0, 80) };
+}
+function saveVoiceAnswer_(jobId, logId, row) {
+  var item = {
+    q: String(row && row.q || '').slice(0, 240),
+    type: row && row.type === 'speech' ? 'speech' : 'yesno',
+    answer: String(row && row.answer || '').slice(0, 500),
+    callback: !!(row && row.callback),
+    at: new Date().toISOString()
+  };
+  var jobs = load_();
+  var i, changed = false;
+  if (jobId && jobId !== 'sample' && Array.isArray(jobs)) {
+    for (i = 0; i < jobs.length; i++) {
+      if (!jobs[i] || jobs[i].id !== jobId) continue;
+      if (!Array.isArray(jobs[i].callAnswers)) jobs[i].callAnswers = [];
+      jobs[i].callAnswers.push(item);
+      if (jobs[i].callAnswers.length > 40) jobs[i].callAnswers = jobs[i].callAnswers.slice(-40);
+      changed = true;
+      break;
+    }
+    if (changed) save_(jobs);
+  }
+  var log = callLog_();
+  for (i = 0; i < log.length; i++) {
+    if (!log[i] || log[i].id !== logId) continue;
+    if (!Array.isArray(log[i].answers)) log[i].answers = [];
+    log[i].answers.push(item);
+    if (log[i].answers.length > 20) log[i].answers = log[i].answers.slice(-20);
+    if (item.answer === 'no') log[i].no = true;
+    if (item.callback) log[i].callback = true;
+    break;
+  }
+  saveCallLog_(log);
+}
+function twimlOut_(xml) {
+  return ContentService.createTextOutput(xml).setMimeType(ContentService.MimeType.XML);
+}
+function twvoice_(p) {
+  var jobId = String(p && p.job || '').slice(0, 40);
+  var logId = String(p && p.log || '').slice(0, 48);
+  var cfg = reminderCfg_(loadObj_('settings.json'));
+  var questions = cfg.questions;
+  var log = callLog_();
+  var i;
+  for (i = 0; i < log.length; i++) {
+    if (log[i] && log[i].id === logId && Array.isArray(log[i].questions) && log[i].questions.length) {
+      questions = log[i].questions;
+      break;
+    }
+  }
+  var base = '';
+  try { base = ScriptApp.getService().getUrl() || ''; } catch (eUrl) { base = ''; }
+  var step = voiceStep_({
+    jobId: jobId, logId: logId, q: p && p.q, tok: p && p.tok,
+    digits: (p && (p.Digits || p.digits)) || '',
+    speech: (p && (p.SpeechResult || p.speech)) || '',
+    questions: questions, secret: scriptProp_('TWILIO_TOKEN'), base: base, sign: voiceSign_
+  });
+  if (step.save) {
+    var L = LockService.getScriptLock();
+    try { L.waitLock(20000); saveVoiceAnswer_(jobId, logId, step.save); }
+    catch (eSave) {}
+    finally { try { L.releaseLock(); } catch (eRel) {} }
+  }
+  return twimlOut_(step.twiml);
 }
 function installReminderTrigger() {
   var triggers = ScriptApp.getProjectTriggers();

@@ -179,6 +179,7 @@ function customerJob(j){
   delete o.aiNote;
   delete o.phone2;
   delete o.contact2;
+  delete o.callAnswers;
   if (Array.isArray(o.items)) {
     var vis = o.items.filter(function (it) { return !(it && it.internal); });
     if (vis.length !== o.items.length) {

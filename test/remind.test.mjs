@@ -22,7 +22,7 @@ function grab(src, name) {
   throw new Error('unclosed ' + name);
 }
 
-const names = ['e164_', 'reminderCfg_', 'reminderDial_', 'guardDial_', 'reminderDue_', 'reminderSay_', 'manualSay_', 'xmlEsc_', 'reminderTwiml_', 'reminderFinal_'];
+const names = ['e164_', 'questionsFrom_', 'reminderCfg_', 'reminderDial_', 'guardDial_', 'reminderDue_', 'reminderSay_', 'manualSay_', 'xmlEsc_', 'reminderTwiml_', 'goodbyeTwiml_', 'questionPrompt_', 'voiceMsg_', 'voiceToken_', 'voiceOk_', 'voiceUrl_', 'gatherXml_', 'openingTwiml_', 'callTwiml_', 'voiceAnswer_', 'voiceRejectTwiml_', 'voiceStep_', 'reminderFinal_'];
 const sandbox = {};
 vm.createContext(sandbox);
 vm.runInContext(names.map((n) => grab(code, n)).join('\n'), sandbox);
@@ -103,7 +103,7 @@ test('manual call dials the customer and leaves the job unmarked', () => {
     const body = grab(src, 'remindNow_');
     assert.match(src, /d\.a === 'remindnow'/);
     assert.match(body, /manual: true/);
-    assert.match(body, /twilioCall_\(creds, phone, say\)/);
+    assert.match(body, /placeReminder_\(creds, phone, say/);
     assert.match(body, /manualSay_\(\)/);
     assert.match(body, /upcomingJob_/);
     assert.doesNotMatch(body, /reminded/);
@@ -117,4 +117,78 @@ test('manual call dials the customer and leaves the job unmarked', () => {
   assert.match(app, /a: 'remindnow'/);
   assert.match(app, /role !== 'Owner'/);
   assert.match(app, /c\.manual \? 'Manual'/);
+});
+
+test('call questions gather on GET and reject a bad token', () => {
+  const sign = (msg, secret) => secret + ':' + msg;
+  const cfg = sandbox.reminderCfg_({});
+  assert.equal(cfg.questions.length, 1);
+  assert.equal(cfg.questions[0].text, 'Will the driveway or work area be cleared before we arrive?');
+  assert.equal(cfg.questions[0].type, 'yesno');
+  assert.equal(sandbox.questionsFrom_([]).length, 0);
+  const custom = sandbox.questionsFrom_([
+    { text: '  Gate code? ', type: 'speech' },
+    { text: 'Tom & Sue ready?', type: 'yesno' },
+    { text: '   ', type: 'yesno' }
+  ]);
+  assert.equal(custom.length, 2);
+  assert.equal(custom[0].type, 'speech');
+  const qs = cfg.questions.concat([{ text: 'What is the gate code?', type: 'speech' }]);
+  const tok0 = sandbox.voiceToken_('J1', 'RC1', 0, 'sek', sign);
+  const opening = sandbox.callTwiml_('Hello there.', qs, 'J1', 'RC1', 'sek', 'https://script.google.com/macros/s/ABC/exec', sign);
+  assert.match(opening, /Hello there\./);
+  assert.match(opening, /input="dtmf speech"/);
+  assert.match(opening, /method="GET"/);
+  assert.match(opening, /Press 1 for yes, 2 for no\./);
+  assert.match(opening, /Press 0 to request a callback\./);
+  assert.match(opening, /Thanks, see you then\. Call us if anything changes\./);
+  assert.match(opening, /a=twvoice/);
+  assert.match(opening, /&amp;log=/);
+  assert.doesNotMatch(opening, /method="POST"/);
+  const first = sandbox.voiceStep_({
+    jobId: 'J1', logId: 'RC1', q: 0, tok: tok0, digits: '2', speech: '',
+    questions: qs, secret: 'sek', base: 'https://script.google.com/macros/s/ABC/exec', sign
+  });
+  assert.equal(first.ok, true);
+  assert.equal(first.save.answer, 'no');
+  assert.equal(first.save.callback, false);
+  assert.match(first.twiml, /What is the gate code\?/);
+  assert.match(first.twiml, /method="GET"/);
+  assert.match(first.twiml, /&amp;q=1/);
+  const spoken = sandbox.voiceStep_({
+    jobId: 'J1', logId: 'RC1', q: 1, tok: sandbox.voiceToken_('J1', 'RC1', 1, 'sek', sign),
+    digits: '', speech: 'The code is 12', questions: qs, secret: 'sek',
+    base: 'https://script.google.com/macros/s/ABC/exec', sign
+  });
+  assert.equal(spoken.save.answer, 'The code is 12');
+  assert.match(spoken.twiml, /Thanks, see you then\. Call us if anything changes\./);
+  assert.doesNotMatch(spoken.twiml, /<Gather/);
+  const cb = sandbox.voiceAnswer_('yesno', '0', 'yes');
+  assert.equal(cb.callback, true);
+  assert.equal(sandbox.voiceAnswer_('yesno', '', 'nope').answer, 'no');
+  assert.equal(sandbox.voiceAnswer_('yesno', '1', 'no').answer, 'yes');
+  const bad = sandbox.voiceStep_({
+    jobId: 'J1', logId: 'RC1', q: 0, tok: 'nope', digits: '1', speech: '',
+    questions: qs, secret: 'sek', base: 'https://script.google.com/macros/s/ABC/exec', sign
+  });
+  assert.equal(bad.ok, false);
+  assert.equal(bad.save, null);
+  assert.match(bad.twiml, /<Hangup\/>/);
+  const escaped = sandbox.gatherXml_({ text: 'Tom & Sue <ready>?', type: 'yesno' }, 'https://example.com/exec?a=twvoice&q=0');
+  assert.match(escaped, /Tom &amp; Sue &lt;ready&gt;\?/);
+  assert.match(escaped, /action="https:\/\/example.com\/exec\?a=twvoice&amp;q=0"/);
+  for (const src of [code, backend]) {
+    assert.match(src, /p\.a === 'twvoice'/);
+    assert.match(src, /peek\.a === 'twvoice'/);
+    assert.match(src, /function saveVoiceAnswer_/);
+    assert.match(src, /method="GET"/);
+    assert.match(src, /delete o\.callAnswers/);
+    const voice = src.slice(src.indexOf('function twvoice_'), src.indexOf('function installReminderTrigger'));
+    assert.doesNotMatch(voice, /MailApp/);
+  }
+  const app = fs.readFileSync('app.js', 'utf8');
+  assert.match(app, /Call questions/);
+  assert.match(app, /id="remqadd"/);
+  assert.match(app, /class="badge callflag"/);
+  assert.match(app, /Will the driveway or work area be cleared before we arrive\?/);
 });

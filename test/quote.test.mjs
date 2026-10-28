@@ -188,7 +188,8 @@ test('hardness, notes, and AI measure notes never reach a customer-facing render
     hardness: 8,
     hardnessHow: 'ZXHARD penny scratch on the north slab',
     internalNotes: [{ t: '2026-10-27T18:04:00.000Z', text: 'ZXNOTE do not mention the failed scratch' }],
-    aiNote: 'ZXAI double door about 16 ft, two bays, medium confidence'
+    aiNote: 'ZXAI double door about 16 ft, two bays, medium confidence',
+    callAnswers: [{ q: 'ZXCALL driveway clear', answer: 'no', callback: true, at: '2026-10-28T00:00:00.000Z' }]
   };
   const other = { hardness: 3, hardnessHow: '', internalNotes: [], aiNote: '' };
   const fns = ['quoteEmailHtml', 'pdfHtml', 'recapEmailHtml', 'invoiceEmailHtml', 'responseFormHtml', 'responseThanksHtml', 'reviewEmailHtml'];
@@ -199,6 +200,7 @@ test('hardness, notes, and AI measure notes never reach a customer-facing render
     assert.doesNotMatch(left, /ZXHARD/, name);
     assert.doesNotMatch(left, /ZXNOTE/, name);
     assert.doesNotMatch(left, /ZXAI/, name);
+    assert.doesNotMatch(left, /ZXCALL/, name);
     assert.doesNotMatch(left, /Mohs/i, name);
     assert.doesNotMatch(left, /hardnessHow|internalNotes/, name);
   }
@@ -207,6 +209,7 @@ test('hardness, notes, and AI measure notes never reach a customer-facing render
   assert.equal(stripped.hardnessHow, undefined);
   assert.equal(stripped.internalNotes, undefined);
   assert.equal(stripped.aiNote, undefined);
+  assert.equal(stripped.callAnswers, undefined);
   assert.equal(stripped.crewNotes, 'Floor was clear.');
   assert.match(q.quoteEmailHtml(face(dirty)), /A\) Approve/);
   assert.match(q.pdfHtml(face(dirty)), /Dominion/);

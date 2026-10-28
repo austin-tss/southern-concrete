@@ -200,7 +200,13 @@ function handle(d) {
           ? {
               on: d.reminders.on === true,
               test: d.reminders.test !== false,
-              testPhone: String(d.reminders.testPhone || '').trim().slice(0, 40)
+              testPhone: String(d.reminders.testPhone || '').trim().slice(0, 40),
+              questions: Array.isArray(d.reminders.questions)
+                ? d.reminders.questions.map((q) => ({
+                    text: String(q && q.text || '').replace(/\s+/g, ' ').trim().slice(0, 240),
+                    type: q && q.type === 'speech' ? 'speech' : 'yesno'
+                  })).filter((q) => q.text).slice(0, 8)
+                : (settings.reminders && Array.isArray(settings.reminders.questions) ? settings.reminders.questions : [{ text: 'Will the driveway or work area be cleared before we arrive?', type: 'yesno' }])
             }
           : (settings.reminders || { on: false, test: true, testPhone: '' })
       };

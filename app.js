@@ -540,7 +540,7 @@ function hl() {
     const due = G.jobs.filter((j) => j.status === 'complete').length;
     note = (tab === 'jobs' && due ? `<p class="muted" style="margin:0 0 8px;color:#9a3412"><b>${due} job${due > 1 ? 's' : ''} finished, ready to invoice</b></p>` : '') + (tab === 'done' ? '<p class="muted" style="margin:0 0 8px">Filed away. Tap any one to view it.</p>' : '');
   }
-  el.innerHTML = note + (arr.length ? '' : `<p class="muted" style="text-align:center;padding:20px">${q ? 'No matches. Try a name, address or estimate number.' : SEMPTY[tab]}</p>`) + arr.map((j) => `<button class="job" ${sect(j) === 'done' ? 'style="opacity:.85"' : ''} onclick="jview('${j.id}')"><span class="t">${j.total != null ? SCCQuote.money(j.total) : ''}</span><b>${esc(j.name)}</b><div class="a">${esc(j.address)}${j.est ? ' · ' + esc(j.est) : ''}</div><span class="badge" style="background:${SC[stat(j)] || '#8a8f98'}">${ST[stat(j)] || esc(j.status)}</span>${q ? ` <span class="muted">${SECT[sect(j)]}</span>` : ''}${j.response && j.status === 'reply' ? ' <span class="muted">' + esc(j.response.text || '').slice(0, 40) + '</span>' : ''}</button>`).join('');
+  el.innerHTML = note + (arr.length ? '' : `<p class="muted" style="text-align:center;padding:20px">${q ? 'No matches. Try a name, address or estimate number.' : SEMPTY[tab]}</p>`) + arr.map((j) => `<button class="job" ${sect(j) === 'done' ? 'style="opacity:.85"' : ''} onclick="jview('${j.id}')"><span class="t">${j.total != null ? SCCQuote.money(j.total) : ''}</span><b>${esc(j.name)}</b><div class="a">${esc(j.address)}${j.est ? ' · ' + esc(j.est) : ''}</div><span class="badge" style="background:${SC[stat(j)] || '#8a8f98'}">${ST[stat(j)] || esc(j.status)}</span>${callFlag(j)}${q ? ` <span class="muted">${SECT[sect(j)]}</span>` : ''}${j.response && j.status === 'reply' ? ' <span class="muted">' + esc(j.response.text || '').slice(0, 40) + '</span>' : ''}</button>`).join('');
 }
 function home() {
   cur = null;
@@ -1461,7 +1461,7 @@ function jview(id) {
   const specLine = [j.sqft ? SCCQuote.formatSq(j.sqft) + ' sq ft' : '', j.system, j.color].filter(Boolean).join(' · ');
   let h = `<div class="card"><h2>${esc(j.name)}</h2><p style="font-size:18px">📍 <a href="https://maps.google.com/?q=${encodeURIComponent(j.address)}" target="_blank" rel="noopener">${esc(j.address)}</a></p>
 ${specLine ? '<p style="font-size:18px">' + esc(specLine) + '</p>' : ''}
-<p><span class="badge" style="background:${SC[stat(j)] || '#8a8f98'}">${ST[stat(j)] || esc(j.status)}</span> ${cfBadge(j)}${j.invoice ? ` <span class="badge ${paid ? 'paid' : 'open'}">${paid ? 'PAID' : 'OPEN'}</span>` : ''}</p>
+<p><span class="badge" style="background:${SC[stat(j)] || '#8a8f98'}">${ST[stat(j)] || esc(j.status)}</span> ${callFlag(j)}${cfBadge(j)}${j.invoice ? ` <span class="badge ${paid ? 'paid' : 'open'}">${paid ? 'PAID' : 'OPEN'}</span>` : ''}</p>
 ${av(j) ? '<p style="font-size:17px">🕒 <b>Customer prefers:</b> ' + esc(av(j)) + '</p>' : ''}
 ${TEST_MODE ? `<p class="muted">Test mode: emails go only to ${esc(TEST_TO)}</p>` : ''}</div>`;
   h += remindCard(j);
@@ -2054,18 +2054,37 @@ function callWhen(iso) {
   try { return new Date(iso).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); }
   catch (e) { return String(iso || ''); }
 }
+function callFlag(j) {
+  const rows = (j && j.callAnswers) || [];
+  let no = false, cb = false;
+  rows.forEach((a) => { if (a && a.answer === 'no') no = true; if (a && a.callback) cb = true; });
+  if (!no && !cb) return '';
+  const label = [no ? 'No' : '', cb ? 'Callback' : ''].filter(Boolean).join(' · ');
+  return ` <span class="badge callflag" style="background:#9a3412">${esc(label)}</span>`;
+}
+function answerBlock(rows) {
+  if (!rows || !rows.length) return '';
+  return rows.slice(-8).map((a) => {
+    const ans = a.callback && !a.answer ? 'Callback requested' : (a.answer === 'yes' ? 'Yes' : a.answer === 'no' ? 'No' : (a.answer || 'No answer'));
+    const extra = a.callback && a.answer ? ' · Callback' : '';
+    return `<p style="margin:6px 0">${esc(a.q || 'Question')} · <b>${esc(ans + extra)}</b>${a.at ? ' · ' + esc(callWhen(a.at)) : ''}</p>`;
+  }).join('');
+}
 function remindLine(c) {
   const who = c.manual ? 'Manual' : (c.test ? 'Test' : 'Live');
   const num = c.to ? fmtPh(c.to) : '';
   const outcome = c.error || c.status || 'sent';
-  return `<p style="margin:6px 0">${esc(callWhen(c.at))} · ${esc(who)}${num ? ' · ' + esc(num) : ''} · ${esc(outcome)}${c.sid ? ' · ' + esc(c.sid) : ''}</p>`;
+  const flag = [c.no ? 'No' : '', c.callback ? 'Callback' : ''].filter(Boolean).join(' · ');
+  return `<p style="margin:6px 0">${esc(callWhen(c.at))} · ${esc(who)}${num ? ' · ' + esc(num) : ''} · ${esc(outcome)}${c.sid ? ' · ' + esc(c.sid) : ''}${flag ? ' · ' + esc(flag) : ''}</p>`;
 }
 function remindCard(j) {
   const rows = (CALLS || []).filter((c) => c.jobId === j.id);
   const rem = j.reminded || {};
   const head = rem.forStart ? `<p class="muted" style="margin:0 0 6px">Marked reminded for ${esc(String(rem.forStart).replace('T', ' '))}${rem.status ? ' · ' + esc(rem.status) : ''}</p>` : '';
-  const body = rows.length ? rows.slice(0, 6).map(remindLine).join('') : '<p class="muted" style="margin:0">No reminder call yet.</p>';
-  return `<div class="card" id="remindcard"><h2>Reminder call</h2>${head}${body}</div>`;
+  const answers = answerBlock(j.callAnswers);
+  const note = '<p class="muted" style="margin:0 0 6px">Answers stay on this screen. They are left off estimates, invoices, and customer emails.</p>';
+  const body = rows.length ? rows.slice(0, 6).map(remindLine).join('') : (answers ? '' : '<p class="muted" style="margin:0">No reminder call yet.</p>');
+  return `<div class="card" id="remindcard"><h2>Reminder call</h2>${callFlag(j)}${head}${note}${answers}${body}</div>`;
 }
 function remindLogHtml() {
   const rows = (CALLS || []).slice(0, 12);
@@ -2074,8 +2093,37 @@ function remindLogHtml() {
     const who = c.manual ? 'Manual' : (c.test ? 'Test' : 'Live');
     const num = c.to ? fmtPh(c.to) : '';
     const outcome = c.error || c.status || 'sent';
-    return `<p style="margin:6px 0">${esc(callWhen(c.at))} · ${esc(c.customer || c.jobId || 'Call')} · ${esc(who)}${num ? ' · ' + esc(num) : ''} · ${esc(outcome)}</p>`;
+    const flag = [c.no ? 'No' : '', c.callback ? 'Callback' : ''].filter(Boolean).join(' · ');
+    return `<p style="margin:6px 0">${esc(callWhen(c.at))} · ${esc(c.customer || c.jobId || 'Call')} · ${esc(who)}${num ? ' · ' + esc(num) : ''} · ${esc(outcome)}${flag ? ' · ' + esc(flag) : ''}</p>${answerBlock(c.answers)}`;
   }).join('') + '</div>';
+}
+let REMQ = null;
+function ensureRemQ() {
+  if (REMQ) return REMQ;
+  const saved = SET && SET.reminders && SET.reminders.questions;
+  if (Array.isArray(saved)) REMQ = saved.map((q) => ({ text: String(q && q.text || ''), type: q && q.type === 'speech' ? 'speech' : 'yesno' }));
+  else REMQ = [{ text: 'Will the driveway or work area be cleared before we arrive?', type: 'yesno' }];
+  return REMQ;
+}
+function moveRemQ(i, d) {
+  const list = ensureRemQ();
+  const j = i + d;
+  if (j < 0 || j >= list.length) return;
+  const row = list.splice(i, 1)[0];
+  list.splice(j, 0, row);
+  setScreen();
+}
+function remQuestionHtml() {
+  const list = ensureRemQ();
+  const rows = list.map((q, i) => `<div class="line" style="align-items:stretch">
+<input value="${esc(q.text)}" oninput="ensureRemQ()[${i}].text=this.value" placeholder="Question the call asks">
+<select onchange="ensureRemQ()[${i}].type=this.value"><option value="yesno" ${q.type !== 'speech' ? 'selected' : ''}>Yes / no</option><option value="speech" ${q.type === 'speech' ? 'selected' : ''}>Spoken answer</option></select>
+<div class="row"><button class="btn gr sm" type="button" onclick="moveRemQ(${i},-1)">Up</button><button class="btn gr sm" type="button" onclick="moveRemQ(${i},1)">Down</button><button class="btn gr sm" type="button" onclick="ensureRemQ().splice(${i},1);setScreen()">Delete</button></div>
+</div>`).join('');
+  return `<h3 style="margin:14px 0 6px">Call questions</h3>
+<p class="muted" style="margin:0 0 8px">Asked one at a time. Yes / no says press 1 for yes and 2 for no. Every question also says press 0 to request a callback.</p>
+<div id="remqs">${rows || '<p class="muted">No questions. The call gives the reminder and says goodbye.</p>'}</div>
+<button class="btn gr" id="remqadd" type="button" onclick="ensureRemQ().push({text:'',type:'yesno'});setScreen()">Add question</button>`;
 }
 function remindRow() {
   const r = (SET && SET.reminders) || {};
@@ -2088,6 +2136,7 @@ function remindRow() {
 <label>Test phone</label><input id="remph" type="tel" inputmode="tel" autocomplete="tel" placeholder="(850) 555-0100" value="${esc(r.testPhone || '')}" oninput="setSumText()">
 <button class="btn n" id="remtestbtn" type="button" onclick="remindTest()">Send test call now</button>
 <button class="btn gr" id="reminstall" type="button" onclick="remindInstall()">Install hourly check</button>
+${remQuestionHtml()}
 <h3 style="margin:12px 0 6px">Reminder call log</h3>
 ${remindLogHtml()}`);
 }
@@ -2149,7 +2198,8 @@ function setPayload() {
     reminders: {
       on: $('#remon') ? $('#remon').checked : !!(SET && SET.reminders && SET.reminders.on),
       test: $('#remtest') ? $('#remtest').checked : (SET && SET.reminders ? SET.reminders.test !== false : true),
-      testPhone: $('#remph') ? $('#remph').value.trim() : ((SET && SET.reminders && SET.reminders.testPhone) || '')
+      testPhone: $('#remph') ? $('#remph').value.trim() : ((SET && SET.reminders && SET.reminders.testPhone) || ''),
+      questions: ensureRemQ().map((q) => ({ text: String(q.text || '').trim(), type: q.type === 'speech' ? 'speech' : 'yesno' })).filter((q) => q.text).slice(0, 8)
     }
   };
 }
@@ -2198,6 +2248,7 @@ async function saveSet(quiet) {
     const r = await api(setPayload());
     SET = r.settings || SET;
     FORM = null;
+    REMQ = null;
     if (!quiet) toast('Settings saved');
     if (b) { b.disabled = false; b.textContent = 'Save settings'; }
     if (view === 'set') setScreen();
