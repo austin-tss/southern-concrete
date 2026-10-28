@@ -342,14 +342,15 @@ function handle(d) {
   if (d.a === 'create') {
     if (d.email && !q.validEmail(d.email)) return { ok: false, err: 'That customer email does not look valid.' };
     if (hardnessVal(d.hardness) === null) return { ok: false, err: 'Hardness is a whole number from 1 to 10.' };
-    const fields = { sqft: d.sqft, system: d.system, color: d.color, prep: d.prep, cure: d.cure, rate: d.rate };
-    const items = (d.items && d.items.length) ? d.items : q.buildItems(fields, d.quote);
+    const fields = { sqft: d.sqft, system: d.system, color: d.color, prep: d.prep, cure: d.cure, rate: d.rate, vertical: d.vertical, vrate: d.vrate };
+    const items = q.ensureVertical((d.items && d.items.length) ? d.items : q.buildItems(fields, d.quote), fields);
     const j = {
       id: 'SCC-' + (seq++).toString(36).toUpperCase(),
       est: 'SCC-EST-2026-' + String(seq).padStart(4, '0'),
       name: d.name, address: d.address, email: String(d.email || '').trim(), phone: String(d.phone || '').trim(),
       quote: d.quote || '', sqft: numField(d.sqft), system: d.system || '', color: d.color || '',
       prep: d.prep || '', cure: d.cure || '', rate: numField(d.rate),
+      vertical: numField(d.vertical), vrate: numField(d.vrate),
       hardness: hardnessVal(d.hardness), hardnessHow: String(d.hardnessHow || '').trim().slice(0, 300), internalNotes: [],
       additionalNotes: String(d.additionalNotes || '').trim().slice(0, 4000),
       items, total: q.totalOf(items), status: 'sent', created: new Date().toISOString(),
@@ -412,6 +413,8 @@ function handle(d) {
     j.prep = String(d.prep || '').trim().slice(0, 240);
     j.cure = String(d.cure || '').trim().slice(0, 80);
     j.rate = numField(d.rate);
+    j.vertical = numField(d.vertical);
+    j.vrate = numField(d.vrate);
     j.hardness = hardnessVal(d.hardness);
     j.hardnessHow = String(d.hardnessHow || '').trim().slice(0, 300);
     j.additionalNotes = String(d.additionalNotes || '').trim().slice(0, 4000);
@@ -425,6 +428,7 @@ function handle(d) {
       }
       return { title, detail: String(it.detail || '').trim().slice(0, 2000), price };
     }).filter(Boolean).slice(0, 40);
+    j.items = q.ensureVertical(j.items, { vertical: d.vertical, vrate: d.vrate });
     j.total = q.totalOf(j.items);
     j.id = keptId;
     j.est = keptEst;

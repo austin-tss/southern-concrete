@@ -134,9 +134,10 @@ test('talk-through fill returns quote fields and leaves internal notes out', () 
 test('a house note fills sq ft, system, color, prep, rate, and hardness', () => {
   const start = code.indexOf('var FILL_SYSTEMS');
   const end = code.indexOf('function mergeFill_');
+  const parsers = code.slice(code.indexOf('function parseVertical('), code.indexOf('function parseRate('));
   const box = {};
   vm.createContext(box);
-  vm.runInContext(code.slice(start, end), box);
+  vm.runInContext(parsers + '\n' + code.slice(start, end), box);
   const got = box.interpretSpeech_("doing a concrete job at a house it's about 300 ft the cutting system will use is grind and prep only color flake will be just a wolf gray wanted to do crack repair diamond grinding and the price per square foot on this one will probably need to do seven with a concrete harness of six");
   assert.equal(got.sqft, 300);
   assert.equal(got.jobType, 'Residential');
@@ -146,6 +147,10 @@ test('a house note fills sq ft, system, color, prep, rate, and hardness', () => 
   assert.match(got.prep, /Crack repair/);
   assert.equal(got.rate, 7);
   assert.equal(got.hardness, 6);
+  const vert = box.interpretSpeech_('480 sq ft garage and 40 vertical feet at $8 per vertical ft');
+  assert.equal(vert.sqft, 480);
+  assert.equal(vert.vertical, 40);
+  assert.equal(vert.vrate, 8);
 });
 
 test('Gemini retries a busy model, then tries the flash alias once', () => {

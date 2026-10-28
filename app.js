@@ -351,6 +351,8 @@ function av(j) { const r = j.response || {}; return [r.avail, r.when].filter(Boo
 function specHtml(j) {
   const rows = [
     ['Square footage', j.sqft ? SCCQuote.formatSq(j.sqft) + ' sq ft' : ''],
+    ['Vertical', j.vertical ? SCCQuote.formatSq(j.vertical) + ' ft' : ''],
+    ['Vertical cost', j.vrate ? SCCQuote.money(j.vrate) + ' / ft' : ''],
     ['Coating system', j.system || ''],
     ['Color / flake', j.color || ''],
     ['Prep', j.prep || ''],
@@ -893,7 +895,9 @@ function fieldVals() {
     color: $('#color').value.trim(),
     prep,
     cure: $('#cure').value,
-    rate: $('#rate').value.trim()
+    rate: $('#rate').value.trim(),
+    vertical: $('#vertical') ? $('#vertical').value.trim() : '',
+    vrate: $('#vrate') ? $('#vrate').value.trim() : ''
   };
 }
 function onSystem() {
@@ -905,7 +909,7 @@ function onSystem() {
 }
 function customFieldsHtml(saved) {
   saved = saved || {};
-  const skip = ['talk', 'name', 'address', 'email', 'phone', 'jobType', 'sqft', 'system', 'color', 'prep', 'cure', 'rate', 'hardness', 'photos', 'quote', 'addl', 'inote'];
+  const skip = ['talk', 'name', 'address', 'email', 'phone', 'jobType', 'sqft', 'vertical', 'vrate', 'system', 'color', 'prep', 'cure', 'rate', 'hardness', 'photos', 'quote', 'addl', 'inote'];
   return formCfg().fields.filter((f) => f.show !== false && skip.indexOf(f.id) < 0).map((f) => {
     const id = 'cx-' + f.id;
     const val = saved[f.id];
@@ -918,7 +922,7 @@ function customFieldsHtml(saved) {
 function customPayload() {
   const out = {};
   formCfg().fields.forEach((f) => {
-    if (['talk', 'name', 'address', 'email', 'phone', 'jobType', 'sqft', 'system', 'color', 'prep', 'cure', 'rate', 'hardness', 'photos', 'quote', 'addl', 'inote'].includes(f.id)) return;
+    if (['talk', 'name', 'address', 'email', 'phone', 'jobType', 'sqft', 'vertical', 'vrate', 'system', 'color', 'prep', 'cure', 'rate', 'hardness', 'photos', 'quote', 'addl', 'inote'].includes(f.id)) return;
     const el = document.getElementById('cx-' + f.id);
     if (!el) return;
     out[f.id] = el.type === 'checkbox' ? !!el.checked : String(el.value || '').slice(0, 400);
@@ -928,10 +932,13 @@ function customPayload() {
 function livePrice() {
   const f = fieldVals();
   const sq = Number(f.sqft), rate = Number(String(f.rate).replace(/[$,]/g, ''));
+  const vf = Number(f.vertical), vr = Number(String(f.vrate).replace(/[$,]/g, ''));
   const el = $('#liveprice');
   if (!el) return;
-  if (sq > 0 && rate > 0) el.textContent = SCCQuote.formatSq(sq) + ' sq ft × ' + SCCQuote.money(rate) + ' = ' + SCCQuote.money(SCCQuote.round2(sq * rate));
-  else el.textContent = 'Enter square footage and a price per sq ft.';
+  const bits = [];
+  if (sq > 0 && rate > 0) bits.push(SCCQuote.formatSq(sq) + ' sq ft × ' + SCCQuote.money(rate) + ' = ' + SCCQuote.money(SCCQuote.round2(sq * rate)));
+  if (vf > 0 && vr > 0) bits.push(SCCQuote.formatSq(vf) + ' ft × ' + SCCQuote.money(vr) + ' = ' + SCCQuote.money(SCCQuote.round2(vf * vr)));
+  el.textContent = bits.join(' · ') || 'Enter square footage and a price per sq ft.';
 }
 async function measurePhotos(inp) {
   const files = [...(inp.files || [])].slice(0, 4);
@@ -1006,6 +1013,8 @@ function applyFill(f) {
   put('em', f.email);
   put('ad', f.address);
   put('sqft', f.sqft);
+  put('vertical', f.vertical);
+  put('vrate', f.vrate);
   setChoice('system', f.system, systemList());
   put('color', f.color);
   if (f.jobType) setChoice('jobtype', f.jobType, ['Residential', 'Commercial']);
@@ -1071,7 +1080,7 @@ function spokenRate(raw) {
 }
 function filledCount(f) {
   let n = 0;
-  ['name', 'phone', 'email', 'address', 'sqft', 'jobType', 'system', 'color', 'prep', 'cure', 'rate', 'notes', 'hardness'].forEach((k) => {
+  ['name', 'phone', 'email', 'address', 'sqft', 'vertical', 'vrate', 'jobType', 'system', 'color', 'prep', 'cure', 'rate', 'notes', 'hardness'].forEach((k) => {
     if (f && f[k] != null && String(f[k]).trim() !== '') n++;
   });
   if (f && (f.extras || (f.items && f.items.length))) n++;
@@ -1124,6 +1133,10 @@ function localFillFields(text) {
   const rate = spokenRate(raw);
   if (sq) out.sqft = String(sq);
   if (rate != null) out.rate = String(rate);
+  const vert = SCCQuote.parseVertical(raw);
+  if (vert) out.vertical = String(vert);
+  const vrate = SCCQuote.parseVerticalRate(raw);
+  if (vrate != null) out.vrate = String(vrate);
   const low = raw.toLowerCase();
   const system = localSystem(low);
   if (system) out.system = system;
@@ -1198,6 +1211,8 @@ ${editing ? `<p class="muted" id="estkeep" style="margin-top:0">${esc(pre.est ||
 ${acc('qc', 'Customer details', 'Tap to enter name, address, email', `<label>Customer name</label><input id="nm" autocomplete="name" oninput="cs()"><label>Address</label><div style="position:relative"><input id="ad" autocomplete="off" autocapitalize="words" placeholder="Start typing the Tallahassee address" oninput="cs()"><div class="sug" id="adsug" hidden></div></div><label>Customer email</label><input id="em" type="email" inputmode="email" autocomplete="off" placeholder="Saved on the job" oninput="cs()"><label>Customer phone (optional)</label><input id="ph" type="tel" inputmode="tel" autocomplete="off" placeholder="For call and text from Customers" oninput="cs()">${TEST_MODE ? `<p class="muted">Test mode is on. This address is stored on the job. The estimate email goes only to ${esc(TEST_TO)}.</p>` : '<p class="muted">This email is where the estimate is sent.</p>'}`)}
 ${formOn('jobType') ? `<label>${esc(fieldLabel('jobType', 'Job type'))}</label><select id="jobtype"><option value="">Choose</option><option>Residential</option><option>Commercial</option></select>` : ''}
 ${formOn('sqft') ? `<label>${esc(fieldLabel('sqft', 'Square footage'))}</label><input id="sqft" inputmode="decimal" placeholder="480" oninput="livePrice()">` : '<input id="sqft" hidden>'}
+${formOn('vertical') ? `<label>${esc(fieldLabel('vertical', 'Vertical'))}</label><div style="display:flex;gap:8px;align-items:center"><input id="vertical" inputmode="decimal" placeholder="12" oninput="livePrice()" style="flex:1;min-width:0"><span style="font-weight:700">ft</span></div>` : '<input id="vertical" hidden>'}
+${formOn('vrate') ? `<label>${esc(fieldLabel('vrate', 'Vertical cost'))}</label><div style="display:flex;gap:8px;align-items:center"><span style="font-weight:700">$</span><input id="vrate" inputmode="decimal" placeholder="8.00" oninput="livePrice()" style="flex:1;min-width:0"><span style="font-weight:700">/ ft</span></div>` : '<input id="vrate" hidden>'}
 <p id="ailabel" hidden style="font-weight:700;color:#9a3412;margin:8px 0 0">AI estimate, verify on site</p>
 <input id="mf" type="file" accept="image/*" multiple hidden onchange="measurePhotos(this)">
 <button class="btn n" id="mbtn" type="button" onclick="$('#mf').click()">Measure from photo</button>
@@ -1240,6 +1255,8 @@ ${editing ? '' : '<button class="btn huge d" type="button" onclick="prev()">Prev
   }
   if (editing) {
     $('#sqft').value = pre.sqft == null ? '' : pre.sqft;
+    if ($('#vertical')) $('#vertical').value = pre.vertical == null ? '' : pre.vertical;
+    if ($('#vrate')) $('#vrate').value = pre.vrate == null ? '' : pre.vrate;
     setChoice('system', pre.system, systemList());
     if ($('#jobtype')) setChoice('jobtype', pre.jobType, ['Residential', 'Commercial']);
     $('#color').value = pre.color || '';
@@ -1321,7 +1338,7 @@ async function sendQ() {
   const d = {
     a: 'create', name: $('#nm').value.trim(), address: $('#ad').value.trim(), email: $('#em').value.trim(), phone: ($('#ph') ? $('#ph').value.trim() : ''),
     jobType: ($('#jobtype') && $('#jobtype').value) || '', custom: customPayload(),
-    quote: $('#qt').value, additionalNotes: ($('#addl') && $('#addl').value.trim()) || '', sqft: f.sqft, system: f.system, color: f.color, prep: f.prep, cure: f.cure, rate: f.rate,
+    quote: $('#qt').value, additionalNotes: ($('#addl') && $('#addl').value.trim()) || '', sqft: f.sqft, system: f.system, color: f.color, prep: f.prep, cure: f.cure, rate: f.rate, vertical: f.vertical, vrate: f.vrate,
     hardness: $('#hard') ? $('#hard').value : '', hardnessHow: $('#hardhow') ? $('#hardhow').value.trim() : '',
     items: IT.filter((i) => i.title && i.title.trim()), photos
   };
@@ -1342,7 +1359,7 @@ async function saveEdit(send) {
     a: 'qedit', id, send: !!send,
     name: $('#nm').value.trim(), address: $('#ad').value.trim(), email: $('#em').value.trim(), phone: ($('#ph') ? $('#ph').value.trim() : ''),
     jobType: ($('#jobtype') && $('#jobtype').value) || '', custom: customPayload(),
-    quote: $('#qt').value, additionalNotes: ($('#addl') && $('#addl').value.trim()) || '', sqft: f.sqft, system: f.system, color: f.color, prep: f.prep, cure: f.cure, rate: f.rate,
+    quote: $('#qt').value, additionalNotes: ($('#addl') && $('#addl').value.trim()) || '', sqft: f.sqft, system: f.system, color: f.color, prep: f.prep, cure: f.cure, rate: f.rate, vertical: f.vertical, vrate: f.vrate,
     hardness: $('#hard') ? $('#hard').value : '', hardnessHow: $('#hardhow') ? $('#hardhow').value.trim() : '',
     items: IT.filter((i) => i.title && i.title.trim())
   };
@@ -1458,7 +1475,7 @@ function jview(id) {
   const li = (j.items || []).length;
   const tot = j.total != null ? SCCQuote.money(j.total) : '';
   const K = (x) => x + id;
-  const specLine = [j.sqft ? SCCQuote.formatSq(j.sqft) + ' sq ft' : '', j.system, j.color].filter(Boolean).join(' · ');
+  const specLine = [j.sqft ? SCCQuote.formatSq(j.sqft) + ' sq ft' : '', j.vertical ? SCCQuote.formatSq(j.vertical) + ' vertical ft' : '', j.system, j.color].filter(Boolean).join(' · ');
   let h = `<div class="card"><h2>${esc(j.name)}</h2><p style="font-size:18px">📍 <a href="https://maps.google.com/?q=${encodeURIComponent(j.address)}" target="_blank" rel="noopener">${esc(j.address)}</a></p>
 ${specLine ? '<p style="font-size:18px">' + esc(specLine) + '</p>' : ''}
 <p><span class="badge" style="background:${SC[stat(j)] || '#8a8f98'}">${ST[stat(j)] || esc(j.status)}</span> ${callFlag(j)}${cfBadge(j)}${j.invoice ? ` <span class="badge ${paid ? 'paid' : 'open'}">${paid ? 'PAID' : 'OPEN'}</span>` : ''}</p>

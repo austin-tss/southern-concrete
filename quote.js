@@ -79,6 +79,38 @@ function parseSqft(raw){
   var m=String(raw||'').match(/(\d[\d,]*(?:\.\d+)?)\s*(?:sq\.?\s*-?\s*ft|sqft|square\s*feet|sq\.?\s*feet|\bsf\b)/i);
   return m?parseFloat(m[1].replace(/,/g,'')):null;
 }
+function parseVertical(raw){
+  var s=String(raw||'');
+  var patterns=[
+    /(\d[\d,]*(?:\.\d+)?)\s*(?:ft|feet)\s+(?:of\s+)?vertical\b/i,
+    /(\d[\d,]*(?:\.\d+)?)\s*vertical\s*(?:ft|feet)\b/i,
+    /\bvertical\s*(?:of|is|:)?\s*(\d[\d,]*(?:\.\d+)?)\s*(?:ft|feet)?\b/i
+  ];
+  var i,m,n;
+  for(i=0;i<patterns.length;i++){
+    m=s.match(patterns[i]);
+    if(!m)continue;
+    n=parseFloat(String(m[1]).replace(/,/g,''));
+    if(n>0&&n<100000)return Math.round(n*10)/10;
+  }
+  return null;
+}
+function parseVerticalRate(raw){
+  var s=String(raw||'');
+  var patterns=[
+    /\$\s*(\d+(?:\.\d{1,2})?)\s*(?:per|a|an|\/)\s*vertical\s*(?:ft|foot|feet)\b/i,
+    /(\d+(?:\.\d{1,2})?)\s*(?:dollars|bucks)?\s*(?:per|a|an|\/)\s*vertical\s*(?:ft|foot|feet)\b/i,
+    /vertical\s*(?:at|for|@)\s*\$?\s*(\d+(?:\.\d{1,2})?)\b/i
+  ];
+  var i,m,n;
+  for(i=0;i<patterns.length;i++){
+    m=s.match(patterns[i]);
+    if(!m)continue;
+    n=parseFloat(m[1]);
+    if(n>0&&n<10000)return Math.round(n*100)/100;
+  }
+  return null;
+}
 function parseRate(raw){
   var s=String(raw||'');
   var patterns=[
@@ -158,7 +190,24 @@ function buildItems(fields,spoken){
     items.push({title:title,detail:bits.join(' '),price:(sqft&&rate)?round2(sqft*rate):null});
   }
   rewriteQuote(spoken).forEach(function(it){if(it.title)items.push(it);});
-  return items;
+  return ensureVertical(items, fields);
+}
+function ensureVertical(items, fields){
+  var list=(items||[]).slice();
+  var vert=numOrNull(fields&&fields.vertical);
+  var vrate=numOrNull(fields&&fields.vrate);
+  var idx=-1,i;
+  for(i=0;i<list.length;i++){
+    if(list[i]&&/^\s*vertical\b/i.test(String(list[i].title||''))){idx=i;break;}
+  }
+  if(!(vert>0&&vrate>0)){
+    if(idx>=0)list.splice(idx,1);
+    return list;
+  }
+  var line={title:'Vertical',detail:formatSq(vert)+' ft at '+money(vrate)+' / ft.',price:round2(vert*vrate)};
+  if(idx>=0)list[idx]=line;
+  else list.push(line);
+  return list;
 }
 function totalOf(items){
   return round2((items||[]).reduce(function(a,i){return a+(Number(i.price)||0);},0));
@@ -228,6 +277,8 @@ function defaultForm() {
       { id: 'phone', label: 'Customer phone', kind: 'text', show: true, customer: false },
       { id: 'jobType', label: 'Job type', kind: 'jobtype', show: true, customer: false },
       { id: 'sqft', label: 'Square footage', kind: 'number', show: true, customer: true },
+      { id: 'vertical', label: 'Vertical', kind: 'number', show: true, customer: true },
+      { id: 'vrate', label: 'Vertical cost', kind: 'number', show: true, customer: true },
       { id: 'system', label: 'Coating system', kind: 'system', show: true, customer: true },
       { id: 'color', label: 'Color / flake', kind: 'color', show: true, customer: true },
       { id: 'prep', label: 'Prep', kind: 'prep', show: true, customer: true },
@@ -312,6 +363,8 @@ function customerFace(o){
 function specRows(j, form){
   var defs=[
     ['sqft','Square footage',j.sqft?formatSq(j.sqft)+' sq ft':''],
+    ['vertical','Vertical',j.vertical?formatSq(j.vertical)+' ft':''],
+    ['vrate','Vertical cost',j.vrate?money(j.vrate)+' / ft':''],
     ['system','Coating system',j.system||''],
     ['color','Color / flake',j.color||''],
     ['prep','Prep',j.prep||''],
@@ -553,7 +606,7 @@ function reviewEmailHtml(o){
 var SCCQuote={
   round2:round2,money:money,validEmail:validEmail,formatSq:formatSq,
   deliveryAddress:deliveryAddress,rewriteQuote:rewriteQuote,buildItems:buildItems,totalOf:totalOf,
-  parseSqft:parseSqft,parseRate:parseRate,parseLump:parseLump,
+  parseSqft:parseSqft,parseRate:parseRate,parseLump:parseLump,parseVertical:parseVertical,parseVerticalRate:parseVerticalRate,ensureVertical:ensureVertical,
   quoteEmailHtml:quoteEmailHtml,pdfHtml:pdfHtml,recapEmailHtml:recapEmailHtml,invoiceEmailHtml:invoiceEmailHtml,
   responseFormHtml:responseFormHtml,responseThanksHtml:responseThanksHtml,reviewEmailHtml:reviewEmailHtml,
   customerJob:customerJob,defaultForm:defaultForm,normalizeForm:normalizeForm,TERMS:TERMS,escHtml:escHtml,

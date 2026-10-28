@@ -681,6 +681,16 @@ function normalizeFill_(raw) {
     var nr = Number(String(rateRaw).replace(/[^0-9.]/g, ''));
     if (!isNaN(nr) && nr > 0 && nr < 10000) out.rate = Math.round(nr * 100) / 100;
   }
+  var vRaw = o.vertical != null ? o.vertical : o.verticalFeet;
+  if (vRaw != null && String(vRaw).trim() !== '') {
+    var nvf = Number(String(vRaw).replace(/[^0-9.]/g, ''));
+    if (!isNaN(nvf) && nvf > 0 && nvf < 100000) out.vertical = Math.round(nvf * 10) / 10;
+  }
+  var vrRaw = o.vrate != null ? o.vrate : (o.verticalRate != null ? o.verticalRate : o.verticalCost);
+  if (vrRaw != null && String(vrRaw).trim() !== '') {
+    var nvr = Number(String(vrRaw).replace(/[^0-9.]/g, ''));
+    if (!isNaN(nvr) && nvr > 0 && nvr < 10000) out.vrate = Math.round(nvr * 100) / 100;
+  }
   put('timeline', o.timeline, 160);
   put('notes', o.notes, 800);
   var extras = o.extras != null ? o.extras : (o.extra != null ? o.extra : o.addOns);
@@ -805,10 +815,20 @@ function interpretSpeech_(text) {
   var out = {};
   if (!raw) return out;
   var sq = raw.match(/(\d[\d,]*(?:\.\d+)?)\s*(?:sq\.?\s*-?\s*ft|sqft|square\s*feet|sq\.?\s*feet|\bsf\b)/i);
-  if (!sq) sq = raw.match(/\b(\d[\d,]*)\s*ft\b/i);
+  var looseFt = false;
+  if (!sq) { sq = raw.match(/\b(\d[\d,]*)\s*ft\b/i); looseFt = !!sq; }
   if (sq) {
-    var nsq = parseFloat(sq[1].replace(/,/g, ''));
-    if (nsq >= 40 && nsq < 1000000) out.sqft = Math.round(nsq);
+    var around = raw.slice(Math.max(0, sq.index - 16), sq.index + sq[0].length + 16);
+    if (!(looseFt && /vertical/i.test(around))) {
+      var nsq = parseFloat(sq[1].replace(/,/g, ''));
+      if (nsq >= 40 && nsq < 1000000) out.sqft = Math.round(nsq);
+    }
+  }
+  if (typeof parseVertical === 'function') {
+    var vertFt = parseVertical(raw);
+    if (vertFt) out.vertical = vertFt;
+    var vertRate = parseVerticalRate(raw);
+    if (vertRate) out.vrate = vertRate;
   }
   if (/acid\s*stain/.test(low)) out.system = 'Acid Stain and Seal';
   else if (/grind and seal|grind & seal/.test(low)) out.system = 'Grind and Seal';
@@ -861,7 +881,7 @@ function mergeFill_(base, extra) {
 }
 function fillCount_(o) {
   var n = 0;
-  ['name', 'phone', 'email', 'address', 'sqft', 'jobType', 'system', 'color', 'prep', 'cure', 'rate', 'notes', 'hardness'].forEach(function (k) {
+  ['name', 'phone', 'email', 'address', 'sqft', 'vertical', 'vrate', 'jobType', 'system', 'color', 'prep', 'cure', 'rate', 'notes', 'hardness'].forEach(function (k) {
     if (o && o[k] != null && String(o[k]).trim() !== '') n++;
   });
   if (o && o.items && o.items.length) n++;
@@ -885,7 +905,7 @@ function quoteFill_(text) {
   var local = interpretSpeech_(spoken);
   var key = scriptProp_('GEMINI_API_KEY');
   if (!key) return fillReady_(local).ready ? fillReady_(local) : { ok: true, ready: false, message: 'AI fill not set up yet' };
-  var prompt = 'You turn a contractor spoken note into a concrete coating estimate. The note may contain speech-to-text mistakes. Fix those before you answer. cutting means coating. harness means hardness, a Mohs number from 1 to 10. A floor size given in ft is square feet unless they say long, wide, or door. Return one JSON object and nothing else. Keys you may use: name, phone, email, address, sqft, jobType, system, color, prep, cure, rate, items, notes, hardness. sqft, rate, and hardness are numbers. jobType is Residential or Commercial. A house or home is Residential. system must be exactly one of: ' + FILL_SYSTEMS.join('; ') + '. prep is a comma-separated list using only: ' + FILL_PREPS.join('; ') + '. cure, when you know it, is exactly one of: ' + FILL_CURES.join('; ') + '. color is the flake or coating color with spelling corrected. Real color names: ' + colorList + '. items is an array of objects with title, detail, and price. price is a number, or null when the line is included. Include the main system line, and a separate line for each prep add-on such as crack repair and diamond grinding. When sqft and rate are both known, the main line price is sqft times rate. notes is optional customer-facing additional text with no price. Omit notes when the customer does not need extra text. Omit any key you cannot tell. Do not invent a phone or email. Never put hardness, a Mohs number, or private notes into notes or items.';
+  var prompt = 'You turn a contractor spoken note into a concrete coating estimate. The note may contain speech-to-text mistakes. Fix those before you answer. cutting means coating. harness means hardness, a Mohs number from 1 to 10. A floor size given in ft is square feet unless they say long, wide, door, or vertical. vertical is vertical feet, a number, only when the note says vertical. vrate is dollars per vertical foot. Do not count vertical feet as sqft. Return one JSON object and nothing else. Keys you may use: name, phone, email, address, sqft, vertical, vrate, jobType, system, color, prep, cure, rate, items, notes, hardness. sqft, rate, and hardness are numbers. jobType is Residential or Commercial. A house or home is Residential. system must be exactly one of: ' + FILL_SYSTEMS.join('; ') + '. prep is a comma-separated list using only: ' + FILL_PREPS.join('; ') + '. cure, when you know it, is exactly one of: ' + FILL_CURES.join('; ') + '. color is the flake or coating color with spelling corrected. Real color names: ' + colorList + '. items is an array of objects with title, detail, and price. price is a number, or null when the line is included. Include the main system line, and a separate line for each prep add-on such as crack repair and diamond grinding. When sqft and rate are both known, the main line price is sqft times rate. notes is optional customer-facing additional text with no price. Omit notes when the customer does not need extra text. Omit any key you cannot tell. Do not invent a phone or email. Never put hardness, a Mohs number, or private notes into notes or items.';
   prompt += '\n\nSpoken note:\n' + spoken;
   var gotFetch = geminiGenerate_(key, [{ text: prompt }]);
   if (!gotFetch || gotFetch.code < 200 || gotFetch.code >= 300) return fillReady_(local);
@@ -1492,8 +1512,8 @@ function doPost(e) {
     if (d.a === 'create') {
       if (d.email && !validEmail(d.email)) return out_({ ok: false, err: 'That customer email does not look valid.' });
       if (hardnessVal_(d.hardness) === null) return out_({ ok: false, err: 'Hardness is a whole number from 1 to 10.' });
-      var fields = { sqft: d.sqft, system: d.system, color: d.color, prep: d.prep, cure: d.cure, rate: d.rate };
-      var items = (d.items && d.items.length) ? d.items : buildItems(fields, d.quote);
+      var fields = { sqft: d.sqft, system: d.system, color: d.color, prep: d.prep, cure: d.cure, rate: d.rate, vertical: d.vertical, vrate: d.vrate };
+      var items = ensureVertical((d.items && d.items.length) ? d.items : buildItems(fields, d.quote), fields);
       j = {
         id: 'SCC-' + Date.now().toString(36).toUpperCase(),
         est: estNo_(),
@@ -1510,6 +1530,8 @@ function doPost(e) {
         prep: d.prep || '',
         cure: d.cure || '',
         rate: numField_(d.rate),
+        vertical: numField_(d.vertical),
+        vrate: numField_(d.vrate),
         hardness: hardnessVal_(d.hardness),
         hardnessHow: String(d.hardnessHow || '').trim().slice(0, 300),
         internalNotes: [],
@@ -1567,10 +1589,12 @@ function doPost(e) {
         j.prep = String(d.prep || '').trim().slice(0, 240);
         j.cure = String(d.cure || '').trim().slice(0, 80);
         j.rate = numField_(d.rate);
+        j.vertical = numField_(d.vertical);
+        j.vrate = numField_(d.vrate);
         j.hardness = hardnessVal_(d.hardness);
         j.hardnessHow = String(d.hardnessHow || '').trim().slice(0, 300);
         j.additionalNotes = String(d.additionalNotes || '').trim().slice(0, 4000);
-        j.items = cleanItems_(d.items);
+        j.items = ensureVertical(cleanItems_(d.items), { vertical: d.vertical, vrate: d.vrate });
         j.total = totalOf(j.items);
         j.pdfId = '';
         j.updated = new Date().toISOString();

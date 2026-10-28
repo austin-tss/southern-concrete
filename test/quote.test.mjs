@@ -84,6 +84,37 @@ test('structured fields price the floor and spoken notes add a line', () => {
   assert.equal(items[1].price, 350);
 });
 
+test('vertical feet times vertical cost is its own line', () => {
+  const items = q.buildItems({
+    sqft: 480, system: 'Garage floor flake system', rate: 6.5,
+    vertical: 40, vrate: 8
+  }, '');
+  assert.equal(items[0].price, 3120);
+  const vert = items.find((it) => it.title === 'Vertical');
+  assert.ok(vert);
+  assert.equal(vert.price, 320);
+  assert.match(vert.detail, /40 ft at \$8\.00 \/ ft/);
+  assert.equal(q.totalOf(items), 3440);
+  assert.equal(q.parseVertical('480 sq ft garage and 40 vertical feet'), 40);
+  assert.equal(q.parseVerticalRate('40 vertical feet at $8 per vertical ft'), 8);
+  assert.equal(q.parseVertical('480 sq ft only'), null);
+  const bare = q.buildItems({ sqft: 480, system: 'Garage floor flake system', rate: 6.5, vertical: 40 }, '');
+  assert.equal(bare.some((it) => it.title === 'Vertical'), false);
+  const job = {
+    id: 'SCC-V', est: 'SCC-EST-2026-0012', name: 'Pat', address: '1 Call St', email: 'pat@example.com',
+    sqft: 480, vertical: 40, vrate: 8, system: 'Garage floor flake system', rate: 6.5,
+    items, total: 3440, date: 'October 28, 2026'
+  };
+  const html = q.quoteEmailHtml({ co, colors, job, testMode: false, testTo: TEST_TO, logoSrc: 'cid:logo', link: (k) => 'https://script.example/?ans=' + k });
+  const pdf = q.pdfHtml({ co, colors, job, logoSrc: 'logo.png' });
+  for (const doc of [html, pdf]) {
+    assert.match(doc, /Vertical/);
+    assert.match(doc, /40 ft/);
+    assert.match(doc, /\$320\.00/);
+    assert.match(doc, /\$8\.00 \/ ft/);
+  }
+});
+
 test('delivery address ignores the customer while test mode is on', () => {
   const on = q.deliveryAddress(true, TEST_TO, 'homeowner@example.com', co.email);
   assert.deepEqual(on, { to: TEST_TO, replyTo: TEST_TO });
