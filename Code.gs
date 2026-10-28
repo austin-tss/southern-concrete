@@ -876,10 +876,21 @@ function guardDial_(choice, testPhone, customerPhone) {
   return choice.dial === e164_(customerPhone);
 }
 function smsDefault24_() {
-  return "Hi {name}, this is Southern Concrete Coatings. Reminder: we're scheduled at {address} on {date} at {time}. See you then!";
+  return "Hi {name}, this is Southern Concrete Coatings. Reminder: we're scheduled for estimate {est} ({work}) at {address} on {date} at {time}. See you then!";
 }
 function smsDefaultDay_() {
+  return "Hey {name}, Southern Concrete Coatings here. We're on the way today at {time} for estimate {est} ({work}).";
+}
+function smsOld24_() {
+  return "Hi {name}, this is Southern Concrete Coatings. Reminder: we're scheduled at {address} on {date} at {time}. See you then!";
+}
+function smsOldDay_() {
   return "Hey {name}, Southern Concrete Coatings here, we're on the way for your {time} appointment today.";
+}
+function smsStored_(raw, fallback, old) {
+  var s = String(raw || '').replace(/\s+/g, ' ').trim();
+  if (!s || s === old) return fallback;
+  return s.slice(0, 480);
 }
 function smsCfg_(o) {
   var t = o && o.texts;
@@ -893,8 +904,8 @@ function smsCfg_(o) {
     on: !!(t && t.on === true),
     test: !t || t.test !== false,
     testPhone: phone.slice(0, 40),
-    t24: (t24 || smsDefault24_()).slice(0, 320),
-    dayof: (day || smsDefaultDay_()).slice(0, 320)
+    t24: smsStored_(t24, smsDefault24_(), smsOld24_()),
+    dayof: smsStored_(day, smsDefaultDay_(), smsOldDay_())
   };
 }
 function smsDial_(s, customerPhone) {
@@ -910,16 +921,67 @@ function smsDial_(s, customerPhone) {
   if (!cust) return { skip: 'no phone' };
   return { dial: cust, test: false };
 }
+function smsBit_(v, max) {
+  return String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, max || 80);
+}
+function smsEst_(raw) {
+  var est = smsBit_(raw, 40);
+  var m = est.match(/^SCC-EST-\d{4}-(\d+)$/i);
+  if (m) return 'EST-' + m[1];
+  return est;
+}
+function smsSq_(sqft) {
+  if (sqft == null || String(sqft).trim() === '') return '';
+  var n = Number(String(sqft).replace(/,/g, ''));
+  if (!isFinite(n) || n <= 0) return '';
+  var r = Math.round(n * 10) / 10;
+  var s = String(r);
+  if (s.indexOf('.') >= 0) s = s.replace(/0+$/, '').replace(/\.$/, '');
+  var parts = s.split('.');
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return parts.join('.') + ' sq ft';
+}
+function smsWork_(system, sqft) {
+  var name = smsBit_(system, 80);
+  var area = smsSq_(sqft);
+  if (name && area) return (name + ', ' + area).slice(0, 140);
+  return (name || area).slice(0, 140);
+}
+function smsTidy_(text) {
+  var s = String(text || '');
+  s = s.replace(/\(\s*\)/g, '');
+  s = s.replace(/\s+/g, ' ').trim();
+  s = s.replace(/\bestimate\s+\(/gi, '(');
+  s = s.replace(/\bestimate\s+(at|on|for)\b/gi, '$1');
+  s = s.replace(/\bestimate\s*([.!?])/gi, '$1');
+  s = s.replace(/\s+for\s*([.!?])/gi, '$1');
+  s = s.replace(/\s+for\s+(at|on)\b/gi, ' $1');
+  s = s.replace(/\bat\s+on\b/gi, 'on');
+  s = s.replace(/\bon\s+at\b/gi, 'at');
+  s = s.replace(/\bat\s+at\b/gi, 'at');
+  s = s.replace(/\bat\s*([.!?])/gi, '$1');
+  s = s.replace(/\s+,/g, ',');
+  s = s.replace(/,\s*,/g, ',');
+  s = s.replace(/\(\s+/g, '(');
+  s = s.replace(/\s+\)/g, ')');
+  s = s.replace(/\s+([.!?])/g, '$1');
+  s = s.replace(/\s{2,}/g, ' ');
+  return s.trim();
+}
 function smsFill_(template, fields) {
   var f = fields || {};
-  var name = String(f.name || '').replace(/\s+/g, ' ').trim().slice(0, 80) || 'there';
-  var address = String(f.address || '').replace(/\s+/g, ' ').trim().slice(0, 120) || 'your job site';
-  var date = String(f.date || '').replace(/\s+/g, ' ').trim().slice(0, 60) || 'the scheduled day';
-  var time = String(f.time || '').replace(/\s+/g, ' ').trim().slice(0, 20) || 'the scheduled time';
+  var map = {
+    name: smsBit_(f.name, 80),
+    address: smsBit_(f.address, 120),
+    date: smsBit_(f.date, 60),
+    time: smsBit_(f.time, 20),
+    est: smsBit_(f.est, 40),
+    work: smsBit_(f.work, 140)
+  };
   var text = String(template || '');
-  text = text.replace(/\{name\}/gi, name).replace(/\{address\}/gi, address).replace(/\{date\}/gi, date).replace(/\{time\}/gi, time);
+  text = text.replace(/\{(name|address|date|time|est|work)\}/gi, function (_, key) { return map[String(key).toLowerCase()] || ''; });
   text = text.replace(/\{hardnessHow\}/gi, '').replace(/\{hardness\}/gi, '').replace(/\{internalNotes\}/gi, '').replace(/\{notes\}/gi, '');
-  return text.replace(/\s+/g, ' ').trim().slice(0, 320);
+  return smsTidy_(text).slice(0, 480);
 }
 function smsSendAtMs_(startMs, sevenMs) {
   var two = Number(startMs) - 2 * 36e5;
@@ -2226,7 +2288,7 @@ function twilioSms_(creds, to, body) {
     method: 'post',
     muteHttpExceptions: true,
     headers: { Authorization: twilioAuth_(creds) },
-    payload: { To: to, From: creds.from, Body: String(body || '').slice(0, 320) }
+    payload: { To: to, From: creds.from, Body: String(body || '').slice(0, 480) }
   });
   var code = res.getResponseCode();
   var raw = res.getContentText() || '';
@@ -2483,7 +2545,7 @@ function runTextsLocked_() {
         }
         continue;
       }
-      body = smsFill_(kind === '24h' ? cfg.t24 : cfg.dayof, { name: j.name, address: j.address, date: appt.dateLabel, time: appt.timeLabel });
+      body = smsFill_(kind === '24h' ? cfg.t24 : cfg.dayof, { name: j.name, address: j.address, date: appt.dateLabel, time: appt.timeLabel, est: smsEst_(j.est), work: smsWork_(j.system, j.sqft) });
       logId = 'RC' + Date.now().toString(36).toUpperCase() + (REM_N++);
       try { made = twilioSms_(creds, choice.dial, body); }
       catch (eSend) { made = { ok: false, error: String(eSend.message || eSend).slice(0, 180) }; }
@@ -2629,8 +2691,17 @@ function textNow_(ids) {
   if (!guardDial_(choice, cfg.testPhone, phone)) {
     return { ok: true, called: false, error: 'off', callLog: callLog_().slice(0, 80) };
   }
-  if (hit) body = smsFill_(cfg.t24, { name: hit.job.name, address: hit.job.address, date: hit.appt.dateLabel, time: hit.appt.timeLabel });
-  else body = smsFill_('Hi {name}, this is Southern Concrete Coatings with a reminder about your upcoming service.', { name: customer, address: address });
+  var srcJob = hit ? hit.job : (mine.length ? mine[0] : {});
+  var fields = {
+    name: (srcJob && srcJob.name) || customer,
+    address: (srcJob && srcJob.address) || address,
+    date: hit ? hit.appt.dateLabel : '',
+    time: hit ? hit.appt.timeLabel : '',
+    est: smsEst_(srcJob && srcJob.est),
+    work: smsWork_(srcJob && srcJob.system, srcJob && srcJob.sqft)
+  };
+  if (hit) body = smsFill_(cfg.t24, fields);
+  else body = smsFill_('Hi {name}, this is Southern Concrete Coatings with a reminder about estimate {est} ({work}).', fields);
   creds = twilioCreds_();
   if (!creds) {
     log = logReminder_({ jobId: jobId, customer: customer, to: choice.dial, test: !!choice.test, manual: true, type: 'sms', kind: 'now', error: 'not configured', status: '' });

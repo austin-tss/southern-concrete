@@ -2198,8 +2198,15 @@ async function remindInstall() {
   } catch (e) { toast(e.message); }
   if (b) { b.disabled = false; b.textContent = 'Install hourly check'; }
 }
-const SMS_24H = "Hi {name}, this is Southern Concrete Coatings. Reminder: we're scheduled at {address} on {date} at {time}. See you then!";
-const SMS_DAY = "Hey {name}, Southern Concrete Coatings here, we're on the way for your {time} appointment today.";
+const SMS_24H = "Hi {name}, this is Southern Concrete Coatings. Reminder: we're scheduled for estimate {est} ({work}) at {address} on {date} at {time}. See you then!";
+const SMS_DAY = "Hey {name}, Southern Concrete Coatings here. We're on the way today at {time} for estimate {est} ({work}).";
+const SMS_24H_OLD = "Hi {name}, this is Southern Concrete Coatings. Reminder: we're scheduled at {address} on {date} at {time}. See you then!";
+const SMS_DAY_OLD = "Hey {name}, Southern Concrete Coatings here, we're on the way for your {time} appointment today.";
+function smsShown(saved, next, old) {
+  const s = String(saved || '').replace(/\s+/g, ' ').trim();
+  if (!s || s === old) return next;
+  return s;
+}
 function textRow() {
   const t = (SET && SET.texts) || {};
   const on = t.on === true;
@@ -2210,9 +2217,9 @@ function textRow() {
 <label class="checks"><span style="display:flex;gap:10px;align-items:center"><input type="checkbox" id="smstest" ${test ? 'checked' : ''} onchange="setSumText()"> Test mode</span></label>
 <p class="muted" style="margin:6px 0">Test mode is on by default. Every text goes only to the test phone, never the customer. Customer numbers are used only when text reminders are on and test mode is off.</p>
 <label>Test phone</label><input id="smsph" type="tel" inputmode="tel" autocomplete="tel" value="${esc(phone)}" oninput="setSumText()">
-<label>Day-before text</label><textarea id="sms24" rows="4" oninput="setSumText()">${esc(t.t24 || SMS_24H)}</textarea>
-<label>Morning-of text</label><textarea id="smsday" rows="3" oninput="setSumText()">${esc(t.dayof || SMS_DAY)}</textarea>
-<p class="muted">{name}, {address}, {date}, and {time} fill in for that job. These texts do not ask questions.</p>`);
+<label>Day-before text</label><textarea id="sms24" rows="4" oninput="setSumText()">${esc(smsShown(t.t24, SMS_24H, SMS_24H_OLD))}</textarea>
+<label>Morning-of text</label><textarea id="smsday" rows="3" oninput="setSumText()">${esc(smsShown(t.dayof, SMS_DAY, SMS_DAY_OLD))}</textarea>
+<p class="muted">{name}, {address}, {date}, {time}, {est}, and {work} fill in for that job. An empty piece is left out. These texts do not ask questions.</p>`);
 }
 function qboRow() {
   const q = (SET && SET.qbo) || {};

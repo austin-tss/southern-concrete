@@ -22,7 +22,7 @@ function grab(src, name) {
   throw new Error('unclosed ' + name);
 }
 
-const names = ['e164_', 'questionsFrom_', 'reminderCfg_', 'reminderDial_', 'guardDial_', 'smsDefault24_', 'smsDefaultDay_', 'smsCfg_', 'smsDial_', 'smsFill_', 'smsSendAtMs_', 'smsDayDue_', 'reminderDue_', 'reminderSay_', 'manualSay_', 'xmlEsc_', 'reminderTwiml_', 'goodbyeTwiml_', 'questionPrompt_', 'voiceMsg_', 'voiceToken_', 'voiceOk_', 'voiceUrl_', 'gatherXml_', 'openingTwiml_', 'callTwiml_', 'voiceAnswer_', 'voiceRejectTwiml_', 'voiceStep_', 'reminderFinal_'];
+const names = ['e164_', 'questionsFrom_', 'reminderCfg_', 'reminderDial_', 'guardDial_', 'smsDefault24_', 'smsDefaultDay_', 'smsOld24_', 'smsOldDay_', 'smsStored_', 'smsCfg_', 'smsDial_', 'smsBit_', 'smsEst_', 'smsSq_', 'smsWork_', 'smsTidy_', 'smsFill_', 'smsSendAtMs_', 'smsDayDue_', 'reminderDue_', 'reminderSay_', 'manualSay_', 'xmlEsc_', 'reminderTwiml_', 'goodbyeTwiml_', 'questionPrompt_', 'voiceMsg_', 'voiceToken_', 'voiceOk_', 'voiceUrl_', 'gatherXml_', 'openingTwiml_', 'callTwiml_', 'voiceAnswer_', 'voiceRejectTwiml_', 'voiceStep_', 'reminderFinal_'];
 const sandbox = {};
 vm.createContext(sandbox);
 vm.runInContext(names.map((n) => grab(code, n)).join('\n'), sandbox);
@@ -210,10 +210,24 @@ test('text reminders stay on the test phone and leave hardness out', () => {
   assert.equal(live.dial, '+18505550199');
   assert.equal(live.test, false);
   assert.equal(sandbox.guardDial_(live, '8504453792', cust), true);
-  const dayBefore = sandbox.smsFill_(sandbox.smsDefault24_(), { name: 'Pat', address: '1200 Call Street', date: 'Tuesday, October 28', time: '8:00 AM' });
-  assert.equal(dayBefore, "Hi Pat, this is Southern Concrete Coatings. Reminder: we're scheduled at 1200 Call Street on Tuesday, October 28 at 8:00 AM. See you then!");
-  const morning = sandbox.smsFill_(sandbox.smsDefaultDay_(), { name: 'Pat', time: '8:00 AM' });
-  assert.equal(morning, "Hey Pat, Southern Concrete Coatings here, we're on the way for your 8:00 AM appointment today.");
+  const work = sandbox.smsWork_('Garage floor flake system', 480);
+  assert.equal(work, 'Garage floor flake system, 480 sq ft');
+  assert.equal(sandbox.smsWork_('Garage floor flake system', ''), 'Garage floor flake system');
+  assert.equal(sandbox.smsWork_('', 1200), '1,200 sq ft');
+  assert.equal(sandbox.smsEst_('SCC-EST-2026-0012'), 'EST-0012');
+  assert.equal(sandbox.smsEst_(''), '');
+  const full = { name: 'Pat', address: '1200 Call Street', date: 'Tuesday, October 28', time: '8:00 AM', est: 'EST-0012', work: work };
+  const dayBefore = sandbox.smsFill_(sandbox.smsDefault24_(), full);
+  assert.equal(dayBefore, "Hi Pat, this is Southern Concrete Coatings. Reminder: we're scheduled for estimate EST-0012 (Garage floor flake system, 480 sq ft) at 1200 Call Street on Tuesday, October 28 at 8:00 AM. See you then!");
+  const morning = sandbox.smsFill_(sandbox.smsDefaultDay_(), full);
+  assert.equal(morning, "Hey Pat, Southern Concrete Coatings here. We're on the way today at 8:00 AM for estimate EST-0012 (Garage floor flake system, 480 sq ft).");
+  const bare = sandbox.smsFill_(sandbox.smsDefault24_(), { name: 'Pat', address: '1200 Call Street', date: 'Tuesday, October 28', time: '8:00 AM' });
+  assert.equal(bare, "Hi Pat, this is Southern Concrete Coatings. Reminder: we're scheduled at 1200 Call Street on Tuesday, October 28 at 8:00 AM. See you then!");
+  const morningBare = sandbox.smsFill_(sandbox.smsDefaultDay_(), { name: 'Pat', time: '8:00 AM' });
+  assert.equal(morningBare, "Hey Pat, Southern Concrete Coatings here. We're on the way today at 8:00 AM.");
+  const estOnly = sandbox.smsFill_(sandbox.smsDefaultDay_(), { name: 'Pat', time: '8:00 AM', est: 'EST-0012' });
+  assert.equal(estOnly, "Hey Pat, Southern Concrete Coatings here. We're on the way today at 8:00 AM for estimate EST-0012.");
+  assert.equal(sandbox.smsCfg_({ texts: { t24: sandbox.smsOld24_(), dayof: sandbox.smsOldDay_() } }).t24, sandbox.smsDefault24_());
   const dirty = sandbox.smsFill_('Note {hardness} {hardnessHow} {internalNotes} {name}', { name: 'Pat' });
   assert.equal(dirty, 'Note Pat');
   assert.doesNotMatch(dirty, /ZXNOTE|Mohs|hardness/);
