@@ -890,10 +890,10 @@ function xmlEsc_(s) {
   return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 function reminderTwiml_(text) {
-  return '<Response><Say voice="alice">' + xmlEsc_(text) + '</Say></Response>';
+  return '<Response><Say voice="Polly.Matthew-Neural">' + xmlEsc_(text) + '</Say></Response>';
 }
 function goodbyeTwiml_() {
-  return '<Say voice="alice">' + xmlEsc_('Thanks, see you then. Call us if anything changes.') + '</Say>';
+  return '<Say voice="Polly.Matthew-Neural">' + xmlEsc_('Thanks, see you then. Call us if anything changes.') + '</Say>';
 }
 function questionPrompt_(q) {
   var line = String(q && q.text || '').replace(/\s+/g, ' ').trim();
@@ -916,12 +916,12 @@ function voiceUrl_(base, jobId, logId, qIndex, token) {
   return b + '?a=twvoice&job=' + encodeURIComponent(jobId || '') + '&log=' + encodeURIComponent(logId || '') + '&q=' + encodeURIComponent(String(qIndex)) + '&tok=' + encodeURIComponent(token || '');
 }
 function gatherXml_(q, action) {
-  return '<Gather input="dtmf speech" numDigits="1" timeout="6" speechTimeout="auto" method="GET" action="' + xmlEsc_(action) + '"><Say voice="alice">' + xmlEsc_(questionPrompt_(q)) + '</Say></Gather>';
+  return '<Gather input="dtmf speech" numDigits="1" timeout="6" speechTimeout="auto" method="GET" action="' + xmlEsc_(action) + '"><Say voice="Polly.Matthew-Neural">' + xmlEsc_(questionPrompt_(q)) + '</Say></Gather>';
 }
 function openingTwiml_(intro, questions, action) {
   var qs = Array.isArray(questions) ? questions : [];
   var xml = '<Response>';
-  if (intro) xml += '<Say voice="alice">' + xmlEsc_(intro) + '</Say>';
+  if (intro) xml += '<Say voice="Polly.Matthew-Neural">' + xmlEsc_(intro) + '</Say>';
   if (qs.length && action) xml += gatherXml_(qs[0], action);
   xml += goodbyeTwiml_();
   xml += '</Response>';
@@ -948,7 +948,7 @@ function voiceAnswer_(type, digits, speech) {
   return null;
 }
 function voiceRejectTwiml_() {
-  return '<Response><Say voice="alice">Sorry, this reminder cannot continue.</Say><Hangup/></Response>';
+  return '<Response><Say voice="Polly.Matthew-Neural">Sorry, this reminder cannot continue.</Say><Hangup/></Response>';
 }
 function voiceStep_(opts) {
   var o = opts || {};
