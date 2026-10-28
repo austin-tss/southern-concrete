@@ -45,6 +45,28 @@ test('config points at this deployment and not another shop script', () => {
   ]) assert.doesNotMatch(config + '\n' + code, new RegExp(id));
 });
 
+test('quote emails bcc the shop copy and feedback does not', () => {
+  assert.match(code, /function sendQuote_\([\s\S]*?quote: true/);
+  assert.match(code, /if \(msg\.quote && !TEST_MODE\)/);
+  assert.match(code, /payload\.bcc = bcc/);
+  assert.match(code, /return 'mccardlematt@yahoo.com'/);
+  const fb = code.slice(code.indexOf('function mailFeedback_'), code.indexOf('function sendReview_'));
+  assert.doesNotMatch(fb, /quote:\s*true/);
+  assert.doesNotMatch(code.slice(code.indexOf('function sendRecap_'), code.indexOf('function sendInvoice_')), /quote:\s*true/);
+  assert.doesNotMatch(code.slice(code.indexOf('function sendInvoice_'), code.indexOf('function respond_')), /quote:\s*true/);
+  assert.doesNotMatch(code.slice(code.indexOf('function sendReview_'), code.indexOf('function mileRate_')), /quote:\s*true/);
+  assert.match(read('app.js'), /id="qbcc"/);
+  assert.match(read('app.js'), /mccardlematt@yahoo\.com/);
+  const sandbox = {};
+  vm.createContext(sandbox);
+  const start = code.indexOf('function quoteBcc_');
+  const end = code.indexOf('function settings_()');
+  vm.runInContext(code.slice(start, end), sandbox);
+  assert.equal(sandbox.quoteBcc_(''), 'mccardlematt@yahoo.com');
+  assert.equal(sandbox.quoteBcc_('not an email'), 'mccardlematt@yahoo.com');
+  assert.equal(sandbox.quoteBcc_(' Office@Example.com '), 'Office@Example.com');
+});
+
 test('quote email builders refuse a customer recipient while test mode is on', () => {
   const sandbox = { module: { exports: {} }, console };
   vm.createContext(sandbox);

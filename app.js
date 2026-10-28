@@ -1983,11 +1983,12 @@ function setSumText() {
   const sign = (($('#qsign') && $('#qsign').value) || '').trim();
   const first = body.split('\n').map((x) => x.trim()).filter(Boolean)[0] || '';
   const stock = body === SCCQuote.QUOTE_EMAIL_BODY && sub === SCCQuote.QUOTE_EMAIL_SUBJECT && sign === SCCQuote.QUOTE_EMAIL_SIGN;
+  const bcc = (($('#qbcc') && $('#qbcc').value.trim()) || (SET && SET.quoteBcc) || 'mccardlematt@yahoo.com');
   const write = (id, text) => { const el = document.getElementById('ssum-' + id); if (el) el.textContent = text; };
   write('pay', clipLine(pay, 'No payment link'));
   write('rev', clipLine(rev, 'No review link'));
   write('fin', fin ? clipLine(fin, '') : ('No financing link' + (min ? ' · from $' + min : '')));
-  write('mail', stock ? 'Default wording' : clipLine(first || sub, 'Default wording'));
+  write('mail', (stock ? 'Default wording' : clipLine(first || sub, 'Default wording')) + ' · ' + bcc);
   const hiddenN = galleryHideList().length;
   write('gal', hiddenN ? hiddenN + ' hidden' : 'None hidden');
   const remOn = $('#remon') ? $('#remon').checked : !!(SET && SET.reminders && SET.reminders.on);
@@ -2192,6 +2193,7 @@ function setPayload() {
     quoteSubject: $('#qsub') ? $('#qsub').value.trim() : ((SET && SET.quoteSubject) || ''),
     quoteBody: $('#qbody') ? $('#qbody').value.trim() : ((SET && SET.quoteBody) || ''),
     quoteSign: $('#qsign') ? $('#qsign').value.trim() : ((SET && SET.quoteSign) || ''),
+    quoteBcc: $('#qbcc') ? $('#qbcc').value.trim() : ((SET && SET.quoteBcc) || 'mccardlematt@yahoo.com'),
     theme: themeName(),
     form: FORM || formCfg(),
     galleryHide: galleryHideList(),
@@ -2226,6 +2228,8 @@ ${srow('mail', 'Customer email', `<p class="muted" style="margin:0 0 8px">This w
 <label>Message</label><textarea id="qbody" rows="6" oninput="setSumText()">${esc(S.quoteBody || SCCQuote.QUOTE_EMAIL_BODY)}</textarea>
 <label>Sign-off</label><textarea id="qsign" rows="3" oninput="setSumText()">${esc(S.quoteSign || SCCQuote.QUOTE_EMAIL_SIGN)}</textarea>
 <p class="muted">Line breaks stay. {name}, {estimate}, and {address} fill in for that customer.</p>
+<label>BCC on quote emails</label><input id="qbcc" type="email" inputmode="email" autocomplete="off" value="${esc(S.quoteBcc || 'mccardlematt@yahoo.com')}" oninput="setSumText()">
+<p class="muted">A copy of each estimate sent to a customer. A blank box keeps mccardlematt@yahoo.com. Feedback and other alerts are not copied.</p>
 <button class="btn gr" id="qreset" type="button" onclick="resetEmailCopy()">Reset to default</button>`)}
 ${srow('form', 'Quote form', formEditorHtml())}
 ${srow('gal', 'Gallery photos', `<p class="muted" style="margin:0 0 8px">Photos you upload are removed for good. Built-in swatches stay hidden until you restore them.</p>

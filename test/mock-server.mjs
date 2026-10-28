@@ -193,6 +193,7 @@ function handle(d) {
         quoteBody: String(d.quoteBody || '').trim().slice(0, 4000),
         quoteSubject: String(d.quoteSubject || '').trim().slice(0, 300),
         quoteSign: String(d.quoteSign || '').trim().slice(0, 800),
+        quoteBcc: /^[^\s@,;]+@[^\s@,;]+\.[a-z]{2,}$/i.test(String(d.quoteBcc || '').trim()) ? String(d.quoteBcc).trim().slice(0, 120) : 'mccardlematt@yahoo.com',
         galleryHide: Array.isArray(d.galleryHide)
           ? [...new Set(d.galleryHide.map((id) => String(id || '').trim()).filter((id) => id.startsWith('sim-')))].slice(0, 200)
           : (settings.galleryHide || []),
