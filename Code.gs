@@ -189,6 +189,7 @@ function customerJob(j){
   delete o.phone2;
   delete o.contact2;
   delete o.callAnswers;
+  delete o.smsReminded;
   if (Array.isArray(o.items)) {
     var vis = o.items.filter(function (it) { return !(it && it.internal); });
     if (vis.length !== o.items.length) {
@@ -638,6 +639,7 @@ function view_(j) {
   delete o.phone2;
   delete o.contact2;
   delete o.callAnswers;
+  delete o.smsReminded;
   return o;
 }
 function logoBlob_() {
@@ -785,7 +787,8 @@ function settings_() {
     quoteBody: String(o.quoteBody || ''), quoteSubject: String(o.quoteSubject || ''), quoteSign: String(o.quoteSign || ''),
     quoteBcc: quoteBcc_(o.quoteBcc),
     galleryHide: galleryHide_(o.galleryHide),
-    reminders: reminderCfg_(o)
+    reminders: reminderCfg_(o),
+    texts: smsCfg_(o)
   };
 }
 function moneyNum_(v) {
@@ -871,6 +874,63 @@ function guardDial_(choice, testPhone, customerPhone) {
   if (!choice || choice.skip || !choice.dial) return false;
   if (choice.test) return choice.dial === e164_(testPhone);
   return choice.dial === e164_(customerPhone);
+}
+function smsDefault24_() {
+  return "Hi {name}, this is Southern Concrete Coatings. Reminder: we're scheduled at {address} on {date} at {time}. See you then!";
+}
+function smsDefaultDay_() {
+  return "Hey {name}, Southern Concrete Coatings here, we're on the way for your {time} appointment today.";
+}
+function smsCfg_(o) {
+  var t = o && o.texts;
+  var calls = o && o.reminders;
+  var phone = String((t && t.testPhone) || '').trim();
+  if (!phone) phone = String((calls && calls.testPhone) || '').trim();
+  if (!phone) phone = '8504453792';
+  var t24 = String((t && t.t24) || '').replace(/\s+/g, ' ').trim();
+  var day = String((t && t.dayof) || '').replace(/\s+/g, ' ').trim();
+  return {
+    on: !!(t && t.on === true),
+    test: !t || t.test !== false,
+    testPhone: phone.slice(0, 40),
+    t24: (t24 || smsDefault24_()).slice(0, 320),
+    dayof: (day || smsDefaultDay_()).slice(0, 320)
+  };
+}
+function smsDial_(s, customerPhone) {
+  var on = !!(s && s.on);
+  var test = !s || s.test !== false;
+  var testPhone = e164_(s && s.testPhone);
+  var cust = e164_(customerPhone);
+  if (!on) return { skip: 'off' };
+  if (test) {
+    if (!testPhone) return { skip: 'no test number' };
+    return { dial: testPhone, test: true };
+  }
+  if (!cust) return { skip: 'no phone' };
+  return { dial: cust, test: false };
+}
+function smsFill_(template, fields) {
+  var f = fields || {};
+  var name = String(f.name || '').replace(/\s+/g, ' ').trim().slice(0, 80) || 'there';
+  var address = String(f.address || '').replace(/\s+/g, ' ').trim().slice(0, 120) || 'your job site';
+  var date = String(f.date || '').replace(/\s+/g, ' ').trim().slice(0, 60) || 'the scheduled day';
+  var time = String(f.time || '').replace(/\s+/g, ' ').trim().slice(0, 20) || 'the scheduled time';
+  var text = String(template || '');
+  text = text.replace(/\{name\}/gi, name).replace(/\{address\}/gi, address).replace(/\{date\}/gi, date).replace(/\{time\}/gi, time);
+  text = text.replace(/\{hardnessHow\}/gi, '').replace(/\{hardness\}/gi, '').replace(/\{internalNotes\}/gi, '').replace(/\{notes\}/gi, '');
+  return text.replace(/\s+/g, ' ').trim().slice(0, 320);
+}
+function smsSendAtMs_(startMs, sevenMs) {
+  var two = Number(startMs) - 2 * 36e5;
+  if (sevenMs == null || isNaN(Number(sevenMs))) return two;
+  return Math.min(two, Number(sevenMs));
+}
+function smsDayDue_(startMs, sevenMs, nowMs) {
+  var sendAt = smsSendAtMs_(startMs, sevenMs);
+  var now = Number(nowMs);
+  if (now < sendAt || now >= Number(startMs)) return false;
+  return now - sendAt <= 2 * 36e5;
 }
 function reminderDue_(startMs, nowMs) {
   var h = (Number(startMs) - Number(nowMs)) / 36e5;
@@ -1838,7 +1898,7 @@ function doPost(e) {
       mailFeedback_(fbList[fbList.length - 1]);
       return out_({ ok: true });
     }
-    if (d.a === 'remindtest' || d.a === 'remindinstall' || d.a === 'remindnow') {
+    if (d.a === 'remindtest' || d.a === 'remindinstall' || d.a === 'remindnow' || d.a === 'textnow') {
       if (!pinOk_(d)) return out_({ ok: false, err: 'Wrong PIN' });
       if (d.a === 'remindinstall') {
         try { installReminderTrigger(); }
@@ -1846,6 +1906,7 @@ function doPost(e) {
         return out_({ ok: true, installed: true });
       }
       if (d.a === 'remindnow') return out_(remindNow_(d.ids));
+      if (d.a === 'textnow') return out_(textNow_(d.ids));
       return out_(remindTest_(d.testPhone));
     }
     if (d.a === 'settings' || d.a === 'explist' || d.a === 'expadd' || d.a === 'expdel' || d.a === 'rcscan' || d.a === 'rcrescan' || d.a === 'rcdrop') {
@@ -1873,6 +1934,7 @@ function doPost(e) {
           }
           curS.reminders = reminderCfg_({ reminders: postedR });
         }
+        if (d.texts && typeof d.texts === 'object') curS.texts = smsCfg_({ texts: d.texts, reminders: curS.reminders });
         save_(curS, 'settings.json');
         return out_({ ok: true, settings: settings_() });
       }
@@ -2083,7 +2145,8 @@ function logReminder_(row) {
   var list = callLog_();
   var err = String(row && row.error || '');
   var manual = !!(row && row.manual);
-  if (!manual && err === 'not configured' && list.length && list[0].error === 'not configured') {
+  var type = String(row && row.type || '').slice(0, 12);
+  if (!manual && err === 'not configured' && list.length && list[0].error === 'not configured' && String(list[0].type || '') === type) {
     var prev = Date.parse(list[0].at || '');
     if (!isNaN(prev) && Date.now() - prev < 6 * 36e5) return list;
   }
@@ -2095,6 +2158,8 @@ function logReminder_(row) {
     to: String(row && row.to || '').slice(0, 20),
     test: !!(row && row.test),
     manual: manual,
+    type: type,
+    kind: String(row && row.kind || '').slice(0, 12),
     sid: String(row && row.sid || '').slice(0, 64),
     status: String(row && row.status || '').slice(0, 40),
     error: err.slice(0, 180),
@@ -2154,6 +2219,21 @@ function placeReminder_(creds, to, intro, questions, jobId, logId) {
   var base = '';
   try { base = ScriptApp.getService().getUrl() || ''; } catch (eUrl) { base = ''; }
   return twilioCall_(creds, to, callTwiml_(intro, questions, jobId, logId, creds.token, base, voiceSign_));
+}
+function twilioSms_(creds, to, body) {
+  var url = 'https://api.twilio.com/2010-04-01/Accounts/' + encodeURIComponent(creds.sid) + '/Messages.json';
+  var res = UrlFetchApp.fetch(url, {
+    method: 'post',
+    muteHttpExceptions: true,
+    headers: { Authorization: twilioAuth_(creds) },
+    payload: { To: to, From: creds.from, Body: String(body || '').slice(0, 320) }
+  });
+  var code = res.getResponseCode();
+  var raw = res.getContentText() || '';
+  var parsed = {};
+  try { parsed = JSON.parse(raw) || {}; } catch (eSms) { parsed = {}; }
+  if (code < 200 || code >= 300 || !parsed.sid) return { ok: false, error: twilioClip_(parsed.message || raw || ('HTTP ' + code), creds) };
+  return { ok: true, sid: String(parsed.sid), status: String(parsed.status || 'queued') };
 }
 function twilioStatus_(creds, sid) {
   var url = 'https://api.twilio.com/2010-04-01/Accounts/' + encodeURIComponent(creds.sid) + '/Calls/' + encodeURIComponent(sid) + '.json';
@@ -2291,7 +2371,7 @@ function pollReminders_(creds, jobs, log) {
   var changed = false, now = Date.now(), i, row, at, status, j;
   for (i = 0; i < log.length; i++) {
     row = log[i];
-    if (!row || !row.sid || row.final) continue;
+    if (!row || !row.sid || row.final || row.type === 'sms') continue;
     at = Date.parse(row.at || '');
     if (isNaN(at) || now - at > 36 * 36e5) continue;
     status = twilioStatus_(creds, row.sid);
@@ -2360,7 +2440,67 @@ function remindDue_() {
   try { runRemindersLocked_(); }
   catch (e) {
     try { logReminder_({ jobId: '', customer: '', to: '', test: false, error: String(e && e.message || e).slice(0, 180), status: 'error' }); } catch (e2) {}
+  }
+  try { runTextsLocked_(); }
+  catch (eText) {
+    try { logReminder_({ jobId: '', customer: '', to: '', test: false, type: 'sms', error: String(eText && eText.message || eText).slice(0, 180), status: 'error' }); } catch (e4) {}
   } finally { try { L.releaseLock(); } catch (e3) {} }
+}
+function smsMarked_(j, kind, key) {
+  var bag = j && j.smsReminded;
+  return !!(bag && bag[kind] && bag[kind].forStart === key);
+}
+function runTextsLocked_() {
+  var cfg = smsCfg_(loadObj_('settings.json'));
+  if (!cfg.on) return { ok: true, skipped: 'off' };
+  var creds = twilioCreds_();
+  var jobs = load_();
+  var blocks = load_('blocks.json');
+  if (!Array.isArray(jobs)) jobs = [];
+  if (!Array.isArray(blocks)) blocks = [];
+  if (!creds) {
+    logReminder_({ jobId: '', customer: '', to: '', test: cfg.test !== false, error: 'not configured', status: '', type: 'sms' });
+    return { ok: true, called: false, error: 'not configured' };
+  }
+  var now = new Date();
+  var log = callLog_();
+  var jobsChanged = false;
+  var i, j, appt, ymd, seven, k, kind, due, choice, body, made, logId;
+  for (i = 0; i < jobs.length; i++) {
+    j = jobs[i];
+    appt = jobAppt_(j, blocks, now);
+    if (!appt) continue;
+    ymd = Utilities.formatDate(appt.start, 'America/New_York', 'yyyy-MM-dd');
+    seven = etDate_(ymd, '07:00');
+    for (k = 0; k < 2; k++) {
+      kind = k === 0 ? '24h' : 'dayof';
+      due = kind === '24h' ? reminderDue_(appt.start.getTime(), now.getTime()) : smsDayDue_(appt.start.getTime(), seven ? seven.getTime() : (appt.start.getTime() - 2 * 36e5), now.getTime());
+      if (!due || smsMarked_(j, kind, appt.key)) continue;
+      choice = smsDial_(cfg, j.phone);
+      if (!guardDial_(choice, cfg.testPhone, j.phone)) {
+        if (choice && (choice.skip === 'no phone' || choice.skip === 'no test number') && !alreadyLogged_(log, j.id, appt.key + '|' + kind, choice.skip)) {
+          log = logReminder_({ jobId: j.id, customer: j.name || '', to: '', test: cfg.test !== false, error: choice.skip, forStart: appt.key + '|' + kind, status: 'skipped', type: 'sms', kind: kind });
+        }
+        continue;
+      }
+      body = smsFill_(kind === '24h' ? cfg.t24 : cfg.dayof, { name: j.name, address: j.address, date: appt.dateLabel, time: appt.timeLabel });
+      logId = 'RC' + Date.now().toString(36).toUpperCase() + (REM_N++);
+      try { made = twilioSms_(creds, choice.dial, body); }
+      catch (eSend) { made = { ok: false, error: String(eSend.message || eSend).slice(0, 180) }; }
+      log = logReminder_({
+        id: logId, jobId: j.id, customer: j.name || '', to: choice.dial, test: !!choice.test,
+        sid: made.sid || '', status: made.status || '', error: made.error || '',
+        forStart: appt.key, type: 'sms', kind: kind, final: true
+      });
+      if (made.ok && made.sid) {
+        if (!j.smsReminded || typeof j.smsReminded !== 'object') j.smsReminded = {};
+        j.smsReminded[kind] = { at: new Date().toISOString(), forStart: appt.key, sid: made.sid, status: made.status || 'queued', to: choice.dial, test: !!choice.test };
+        jobsChanged = true;
+      }
+    }
+  }
+  if (jobsChanged) save_(jobs);
+  return { ok: true };
 }
 function remindTest_(testPhoneRaw) {
   var phone = e164_(testPhoneRaw) || e164_(reminderCfg_(loadObj_('settings.json')).testPhone);
@@ -2444,6 +2584,63 @@ function remindNow_(ids) {
     id: logId, jobId: jobId, customer: customer, to: phone, test: false, manual: true,
     sid: made.sid || '', status: made.status || '', error: made.error || '',
     forStart: forStart, final: reminderFinal_(made.status), questions: qs
+  });
+  return { ok: true, called: !!made.ok, sid: made.sid || '', status: made.status || '', error: made.error || '', callLog: log.slice(0, 80) };
+}
+function textNow_(ids) {
+  var raw = Array.isArray(ids) ? ids : [];
+  var jobs = load_();
+  if (!Array.isArray(jobs)) jobs = [];
+  var mine = [], seen = {}, i, k, id;
+  for (i = 0; i < raw.length && mine.length < 40; i++) {
+    id = String(raw[i] || '');
+    if (!id || seen[id]) continue;
+    for (k = 0; k < jobs.length; k++) {
+      if (jobs[k] && jobs[k].id === id) { mine.push(jobs[k]); seen[id] = 1; break; }
+    }
+  }
+  var name = mine.length && mine[0].name ? String(mine[0].name) : '';
+  var phone = '';
+  var fallbackId = mine.length ? String(mine[0].id || '') : '';
+  var address = mine.length ? String(mine[0].address || '') : '';
+  for (i = 0; i < mine.length; i++) if (!phone) phone = e164_(mine[i].phone);
+  var blocks = load_('blocks.json');
+  if (!Array.isArray(blocks)) blocks = [];
+  var hit = upcomingJob_(mine, blocks, new Date());
+  var jobId = hit ? String(hit.job.id || '') : fallbackId;
+  var customer = (hit && hit.job.name) ? String(hit.job.name) : name;
+  var cfg = smsCfg_(loadObj_('settings.json'));
+  var choice, log, creds, made, body;
+  if (cfg.test !== false) {
+    choice = { dial: e164_(cfg.testPhone), test: true };
+    if (!choice.dial) {
+      log = logReminder_({ jobId: jobId, customer: customer, to: '', test: true, manual: true, type: 'sms', kind: 'now', error: 'no test number', status: 'skipped' });
+      return { ok: true, called: false, error: 'no test number', callLog: log.slice(0, 80) };
+    }
+  } else if (!cfg.on) {
+    return { ok: true, called: false, error: 'off', callLog: callLog_().slice(0, 80) };
+  } else {
+    choice = { dial: phone, test: false };
+    if (!choice.dial) {
+      log = logReminder_({ jobId: jobId, customer: customer, to: '', test: false, manual: true, type: 'sms', kind: 'now', error: 'no phone', status: 'skipped' });
+      return { ok: true, called: false, error: 'no phone', callLog: log.slice(0, 80) };
+    }
+  }
+  if (!guardDial_(choice, cfg.testPhone, phone)) {
+    return { ok: true, called: false, error: 'off', callLog: callLog_().slice(0, 80) };
+  }
+  if (hit) body = smsFill_(cfg.t24, { name: hit.job.name, address: hit.job.address, date: hit.appt.dateLabel, time: hit.appt.timeLabel });
+  else body = smsFill_('Hi {name}, this is Southern Concrete Coatings with a reminder about your upcoming service.', { name: customer, address: address });
+  creds = twilioCreds_();
+  if (!creds) {
+    log = logReminder_({ jobId: jobId, customer: customer, to: choice.dial, test: !!choice.test, manual: true, type: 'sms', kind: 'now', error: 'not configured', status: '' });
+    return { ok: true, called: false, error: 'not configured', callLog: log.slice(0, 80) };
+  }
+  try { made = twilioSms_(creds, choice.dial, body); }
+  catch (eText) { made = { ok: false, error: String(eText.message || eText).slice(0, 180) }; }
+  log = logReminder_({
+    jobId: jobId, customer: customer, to: choice.dial, test: !!choice.test, manual: true, type: 'sms', kind: 'now',
+    sid: made.sid || '', status: made.status || '', error: made.error || '', final: true
   });
   return { ok: true, called: !!made.ok, sid: made.sid || '', status: made.status || '', error: made.error || '', callLog: log.slice(0, 80) };
 }

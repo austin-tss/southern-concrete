@@ -25,7 +25,7 @@ const gallery = [];
 let measureOn = false;
 let fillOn = false;
 const trips = [];
-let settings = { payLink: '', reviewLink: '', finLink: '', finMin: 1000, ocr: true, theme: 'dark', mileRate: 0.7, quoteBody: '', quoteSubject: '', quoteSign: '', form: null, galleryHide: [], reminders: { on: false, test: true, testPhone: '' }, qbo: { connected: false, env: 'sandbox' } };
+let settings = { payLink: '', reviewLink: '', finLink: '', finMin: 1000, ocr: true, theme: 'dark', mileRate: 0.7, quoteBody: '', quoteSubject: '', quoteSign: '', form: null, galleryHide: [], reminders: { on: false, test: true, testPhone: '' }, texts: { on: false, test: true, testPhone: '', t24: '', dayof: '' }, qbo: { connected: false, env: 'sandbox' } };
 const callLog = [];
 let seq = 1;
 let rcSeq = 1;
@@ -151,6 +151,37 @@ function handle(d) {
     });
     return { ok: true, called: false, error: phone ? 'not configured' : 'no phone', callLog: callLog.slice(0, 80) };
   }
+  if (d.a === 'textnow') {
+    if (!pinOk(d)) return { ok: false, err: 'Wrong PIN' };
+    const texts = settings.texts || {};
+    const test = texts.test !== false;
+    const on = texts.on === true;
+    const testPhone = String(texts.testPhone || (settings.reminders && settings.reminders.testPhone) || '8504453792').trim();
+    const ids = Array.isArray(d.ids) ? d.ids : [];
+    const mine = ids.map((id) => jobs.find((j) => j.id === id)).filter(Boolean);
+    const job = mine[0];
+    const cust = (mine.find((j) => j.phone) || {}).phone || '';
+    if (!test && !on) return { ok: true, called: false, error: 'off', callLog: callLog.slice(0, 80) };
+    const to = test ? testPhone : cust;
+    const error = to ? 'not configured' : (test ? 'no test number' : 'no phone');
+    callLog.unshift({
+      id: 'RC' + (seq++),
+      at: new Date().toISOString(),
+      jobId: job ? job.id : '',
+      customer: job ? (job.name || '') : '',
+      to: to,
+      test: test,
+      manual: true,
+      type: 'sms',
+      kind: 'now',
+      sid: '',
+      status: '',
+      error: error,
+      forStart: '',
+      final: false
+    });
+    return { ok: true, called: false, error: error, callLog: callLog.slice(0, 80) };
+  }
   if (d.a === 'feedback') {
     if (!pinOk(d)) return { ok: false, err: 'Wrong PIN' };
     const text = String(d.text || '').trim();
@@ -209,7 +240,16 @@ function handle(d) {
                   })).filter((q) => q.text).slice(0, 8)
                 : (settings.reminders && Array.isArray(settings.reminders.questions) ? settings.reminders.questions : [{ text: 'Will the driveway or work area be cleared before we arrive?', type: 'yesno' }])
             }
-          : (settings.reminders || { on: false, test: true, testPhone: '' })
+          : (settings.reminders || { on: false, test: true, testPhone: '' }),
+        texts: d.texts && typeof d.texts === 'object'
+          ? {
+              on: d.texts.on === true,
+              test: d.texts.test !== false,
+              testPhone: String(d.texts.testPhone || (settings.reminders && settings.reminders.testPhone) || '8504453792').trim().slice(0, 40),
+              t24: String(d.texts.t24 || '').trim().slice(0, 320),
+              dayof: String(d.texts.dayof || '').trim().slice(0, 320)
+            }
+          : (settings.texts || { on: false, test: true, testPhone: '', t24: '', dayof: '' })
       };
       return { ok: true, settings };
     }

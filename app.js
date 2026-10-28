@@ -1705,7 +1705,7 @@ ${c.addrs.map((a) => `<p style="margin:0 0 6px;font-size:16px">📍 <a href="htt
 <p class="muted" style="margin:6px 0 0">📧 ${esc(c.email) || '<b style="color:#b42318">No email</b>'}</p>
 <p class="muted" style="margin:6px 0 0">📞 ${c.phone ? esc(fmtPh(c.phone)) : 'No phone yet'} <a href="#" onclick="editPhone(CK_ids());return false">${c.phone ? 'edit' : 'add'}</a></p>
 <div class="row">${c.phone ? `<a class="btn d sm" href="tel:${t}">Call</a><a class="btn d sm" href="sms:${t}">Text</a>` : ''}${c.email ? `<a class="btn d sm" href="mailto:${esc(c.email)}">Email</a>` : ''}</div>
-${role === 'Owner' ? `<button class="btn n" id="callnow" type="button" onclick="callNow()">Call now</button>` : ''}
+${role === 'Owner' ? `<button class="btn n" id="callnow" type="button" onclick="callNow()">Call now</button><button class="btn n" id="textnow" type="button" onclick="textNow()">Text now</button>` : ''}
 <button class="btn n" type="button" onclick="CEDIT=!CEDIT;render()">Edit customer</button></div>
 ${custCallLog(c)}
 ${CEDIT ? `<div class="card" id="cedit"><h2>Edit customer</h2><p class="muted" style="margin-top:0">This updates every job linked to this customer.</p>
@@ -1744,6 +1744,29 @@ async function callNow() {
     const r = await api({ a: 'remindnow', pin: ownerPin(), ids: c.jobs.map((j) => j.id) });
     if (Array.isArray(r.callLog)) CALLS = r.callLog;
     const outcome = r.called ? ((r.status || 'queued') + (r.sid ? ' · ' + r.sid : '')) : (r.error || 'Call not placed');
+    toast(outcome);
+  } catch (e) { toast(e.message); }
+  if (view === 'cust') render();
+}
+async function textNow() {
+  if (role !== 'Owner') return;
+  const c = custs().find((x) => x.k === CK);
+  if (!c) return;
+  const t = (SET && SET.texts) || {};
+  const test = t.test !== false;
+  const on = t.on === true;
+  const testPhone = t.testPhone || (SET && SET.reminders && SET.reminders.testPhone) || '8504453792';
+  if (!test && !on) return toast('Text reminders are off');
+  const dest = test ? testPhone : c.phone;
+  const shown = fmtPh(dest);
+  if (!digits(dest) || digits(dest).length < 10) return toast(test ? 'Add a test phone in Settings' : 'Add a phone first');
+  if (!confirm('Text ' + (test ? 'the test phone' : c.name) + ' at ' + shown + ' now?')) return;
+  const b = $('#textnow');
+  if (b) { b.disabled = true; b.textContent = 'Texting…'; }
+  try {
+    const r = await api({ a: 'textnow', pin: ownerPin(), ids: c.jobs.map((j) => j.id) });
+    if (Array.isArray(r.callLog)) CALLS = r.callLog;
+    const outcome = r.called ? ((r.status || 'queued') + (r.sid ? ' · ' + r.sid : '')) : (r.error || 'Text not sent');
     toast(outcome);
   } catch (e) { toast(e.message); }
   if (view === 'cust') render();
@@ -1994,6 +2017,9 @@ function setSumText() {
   const remOn = $('#remon') ? $('#remon').checked : !!(SET && SET.reminders && SET.reminders.on);
   const remTest = $('#remtest') ? $('#remtest').checked : !(SET && SET.reminders && SET.reminders.test === false);
   write('rem', (remOn ? 'On' : 'Off') + (remTest ? ' · test mode' : ' · live'));
+  const smsOn = $('#smson') ? $('#smson').checked : !!(SET && SET.texts && SET.texts.on);
+  const smsTest = $('#smstest') ? $('#smstest').checked : !(SET && SET.texts && SET.texts.test === false);
+  write('sms', (smsOn ? 'On' : 'Off') + (smsTest ? ' · test mode' : ' · live'));
 }
 function tgSet(id) {
   const e = document.getElementById('srow-' + id);
@@ -2071,11 +2097,19 @@ function answerBlock(rows) {
     return `<p style="margin:6px 0">${esc(a.q || 'Question')} · <b>${esc(ans + extra)}</b>${a.at ? ' · ' + esc(callWhen(a.at)) : ''}</p>`;
   }).join('');
 }
+function remindKind(c) {
+  if (c.kind === '24h') return 'Day before';
+  if (c.kind === 'dayof') return 'Morning of';
+  if (c.kind === 'now') return 'Now';
+  return '';
+}
 function remindLine(c) {
-  const who = c.manual ? 'Manual' : (c.test ? 'Test' : 'Live');
+  const channel = c.type === 'sms' ? 'Text' : (c.manual ? 'Manual' : (c.test ? 'Test' : 'Live'));
+  const mode = c.type === 'sms' ? (c.manual ? 'Manual' : (c.test ? 'Test' : 'Live')) : '';
   const num = c.to ? fmtPh(c.to) : '';
   const outcome = c.error || c.status || 'sent';
-  const flag = [c.no ? 'No' : '', c.callback ? 'Callback' : ''].filter(Boolean).join(' · ');
+  const flag = [c.no ? 'No' : '', c.callback ? 'Callback' : '', remindKind(c)].filter(Boolean).join(' · ');
+  const who = mode && mode !== channel ? channel + ' · ' + mode : channel;
   return `<p style="margin:6px 0">${esc(callWhen(c.at))} · ${esc(who)}${num ? ' · ' + esc(num) : ''} · ${esc(outcome)}${c.sid ? ' · ' + esc(c.sid) : ''}${flag ? ' · ' + esc(flag) : ''}</p>`;
 }
 function remindCard(j) {
@@ -2091,10 +2125,12 @@ function remindLogHtml() {
   const rows = (CALLS || []).slice(0, 12);
   if (!rows.length) return '<p class="muted" id="remlog">No reminder calls yet.</p>';
   return '<div id="remlog">' + rows.map((c) => {
-    const who = c.manual ? 'Manual' : (c.test ? 'Test' : 'Live');
+    const channel = c.type === 'sms' ? 'Text' : (c.manual ? 'Manual' : (c.test ? 'Test' : 'Live'));
+    const mode = c.type === 'sms' ? (c.manual ? 'Manual' : (c.test ? 'Test' : 'Live')) : '';
+    const who = mode && mode !== channel ? channel + ' · ' + mode : channel;
     const num = c.to ? fmtPh(c.to) : '';
     const outcome = c.error || c.status || 'sent';
-    const flag = [c.no ? 'No' : '', c.callback ? 'Callback' : ''].filter(Boolean).join(' · ');
+    const flag = [c.no ? 'No' : '', c.callback ? 'Callback' : '', remindKind(c)].filter(Boolean).join(' · ');
     return `<p style="margin:6px 0">${esc(callWhen(c.at))} · ${esc(c.customer || c.jobId || 'Call')} · ${esc(who)}${num ? ' · ' + esc(num) : ''} · ${esc(outcome)}${flag ? ' · ' + esc(flag) : ''}</p>${answerBlock(c.answers)}`;
   }).join('') + '</div>';
 }
@@ -2162,6 +2198,22 @@ async function remindInstall() {
   } catch (e) { toast(e.message); }
   if (b) { b.disabled = false; b.textContent = 'Install hourly check'; }
 }
+const SMS_24H = "Hi {name}, this is Southern Concrete Coatings. Reminder: we're scheduled at {address} on {date} at {time}. See you then!";
+const SMS_DAY = "Hey {name}, Southern Concrete Coatings here, we're on the way for your {time} appointment today.";
+function textRow() {
+  const t = (SET && SET.texts) || {};
+  const on = t.on === true;
+  const test = t.test !== false;
+  const phone = t.testPhone || (SET && SET.reminders && SET.reminders.testPhone) || '8504453792';
+  return srow('sms', 'Text reminders', `<p class="muted" style="margin:0 0 8px">Two texts for a scheduled start: one about a day before, and one the morning of the job. Off until you turn it on.</p>
+<label class="checks"><span style="display:flex;gap:10px;align-items:center"><input type="checkbox" id="smson" ${on ? 'checked' : ''} onchange="setSumText()"> Text reminders on</span></label>
+<label class="checks"><span style="display:flex;gap:10px;align-items:center"><input type="checkbox" id="smstest" ${test ? 'checked' : ''} onchange="setSumText()"> Test mode</span></label>
+<p class="muted" style="margin:6px 0">Test mode is on by default. Every text goes only to the test phone, never the customer. Customer numbers are used only when text reminders are on and test mode is off.</p>
+<label>Test phone</label><input id="smsph" type="tel" inputmode="tel" autocomplete="tel" value="${esc(phone)}" oninput="setSumText()">
+<label>Day-before text</label><textarea id="sms24" rows="4" oninput="setSumText()">${esc(t.t24 || SMS_24H)}</textarea>
+<label>Morning-of text</label><textarea id="smsday" rows="3" oninput="setSumText()">${esc(t.dayof || SMS_DAY)}</textarea>
+<p class="muted">{name}, {address}, {date}, and {time} fill in for that job. These texts do not ask questions.</p>`);
+}
 function qboRow() {
   const q = (SET && SET.qbo) || {};
   return srow('qbo', 'QuickBooks', `<p class="muted" style="margin:0 0 8px">${q.connected ? 'Connected' : 'Not connected'} · ${esc(q.env || 'sandbox')}</p>
@@ -2202,6 +2254,13 @@ function setPayload() {
       test: $('#remtest') ? $('#remtest').checked : (SET && SET.reminders ? SET.reminders.test !== false : true),
       testPhone: $('#remph') ? $('#remph').value.trim() : ((SET && SET.reminders && SET.reminders.testPhone) || ''),
       questions: ensureRemQ().map((q) => ({ text: String(q.text || '').trim(), type: q.type === 'speech' ? 'speech' : 'yesno' })).filter((q) => q.text).slice(0, 8)
+    },
+    texts: {
+      on: $('#smson') ? $('#smson').checked : !!(SET && SET.texts && SET.texts.on),
+      test: $('#smstest') ? $('#smstest').checked : !(SET && SET.texts && SET.texts.test === false),
+      testPhone: $('#smsph') ? $('#smsph').value.trim() : ((SET && SET.texts && SET.texts.testPhone) || (SET && SET.reminders && SET.reminders.testPhone) || '8504453792'),
+      t24: $('#sms24') ? $('#sms24').value.trim() : ((SET && SET.texts && SET.texts.t24) || ''),
+      dayof: $('#smsday') ? $('#smsday').value.trim() : ((SET && SET.texts && SET.texts.dayof) || '')
     }
   };
 }
@@ -2235,6 +2294,7 @@ ${srow('form', 'Quote form', formEditorHtml())}
 ${srow('gal', 'Gallery photos', `<p class="muted" style="margin:0 0 8px">Photos you upload are removed for good. Built-in swatches stay hidden until you restore them.</p>
 <button class="btn gr" id="grestore" type="button" onclick="restoreGallery()">Restore deleted photos</button>`)}
 ${remindRow()}
+${textRow()}
 ${qboRow()}
 <button class="btn huge" id="ss" type="button" onclick="saveSet()">Save settings</button>`;
   setSumText();

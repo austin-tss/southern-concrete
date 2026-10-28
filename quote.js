@@ -180,6 +180,7 @@ function customerJob(j){
   delete o.phone2;
   delete o.contact2;
   delete o.callAnswers;
+  delete o.smsReminded;
   if (Array.isArray(o.items)) {
     var vis = o.items.filter(function (it) { return !(it && it.internal); });
     if (vis.length !== o.items.length) {

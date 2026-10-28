@@ -22,7 +22,7 @@ function grab(src, name) {
   throw new Error('unclosed ' + name);
 }
 
-const names = ['e164_', 'questionsFrom_', 'reminderCfg_', 'reminderDial_', 'guardDial_', 'reminderDue_', 'reminderSay_', 'manualSay_', 'xmlEsc_', 'reminderTwiml_', 'goodbyeTwiml_', 'questionPrompt_', 'voiceMsg_', 'voiceToken_', 'voiceOk_', 'voiceUrl_', 'gatherXml_', 'openingTwiml_', 'callTwiml_', 'voiceAnswer_', 'voiceRejectTwiml_', 'voiceStep_', 'reminderFinal_'];
+const names = ['e164_', 'questionsFrom_', 'reminderCfg_', 'reminderDial_', 'guardDial_', 'smsDefault24_', 'smsDefaultDay_', 'smsCfg_', 'smsDial_', 'smsFill_', 'smsSendAtMs_', 'smsDayDue_', 'reminderDue_', 'reminderSay_', 'manualSay_', 'xmlEsc_', 'reminderTwiml_', 'goodbyeTwiml_', 'questionPrompt_', 'voiceMsg_', 'voiceToken_', 'voiceOk_', 'voiceUrl_', 'gatherXml_', 'openingTwiml_', 'callTwiml_', 'voiceAnswer_', 'voiceRejectTwiml_', 'voiceStep_', 'reminderFinal_'];
 const sandbox = {};
 vm.createContext(sandbox);
 vm.runInContext(names.map((n) => grab(code, n)).join('\n'), sandbox);
@@ -191,4 +191,61 @@ test('call questions gather on GET and reject a bad token', () => {
   assert.match(app, /id="remqadd"/);
   assert.match(app, /class="badge callflag"/);
   assert.match(app, /Will the driveway or work area be cleared before we arrive\?/);
+});
+
+test('text reminders stay on the test phone and leave hardness out', () => {
+  const cust = '8505550199';
+  const cfg = sandbox.smsCfg_({});
+  assert.equal(cfg.on, false);
+  assert.equal(cfg.test, true);
+  assert.equal(cfg.testPhone, '8504453792');
+  assert.equal(sandbox.smsCfg_({ reminders: { testPhone: '8505550100' } }).testPhone, '8505550100');
+  assert.equal(sandbox.smsDial_({ on: false, test: true, testPhone: '8504453792' }, cust).skip, 'off');
+  const testText = sandbox.smsDial_({ on: true, test: true, testPhone: '(850) 445-3792' }, cust);
+  assert.equal(testText.dial, '+18504453792');
+  assert.equal(testText.test, true);
+  assert.notEqual(testText.dial, '+18505550199');
+  assert.equal(sandbox.guardDial_(testText, '8504453792', cust), true);
+  const live = sandbox.smsDial_({ on: true, test: false, testPhone: '8504453792' }, cust);
+  assert.equal(live.dial, '+18505550199');
+  assert.equal(live.test, false);
+  assert.equal(sandbox.guardDial_(live, '8504453792', cust), true);
+  const dayBefore = sandbox.smsFill_(sandbox.smsDefault24_(), { name: 'Pat', address: '1200 Call Street', date: 'Tuesday, October 28', time: '8:00 AM' });
+  assert.equal(dayBefore, "Hi Pat, this is Southern Concrete Coatings. Reminder: we're scheduled at 1200 Call Street on Tuesday, October 28 at 8:00 AM. See you then!");
+  const morning = sandbox.smsFill_(sandbox.smsDefaultDay_(), { name: 'Pat', time: '8:00 AM' });
+  assert.equal(morning, "Hey Pat, Southern Concrete Coatings here, we're on the way for your 8:00 AM appointment today.");
+  const dirty = sandbox.smsFill_('Note {hardness} {hardnessHow} {internalNotes} {name}', { name: 'Pat' });
+  assert.equal(dirty, 'Note Pat');
+  assert.doesNotMatch(dirty, /ZXNOTE|Mohs|hardness/);
+  const H = 36e5;
+  assert.equal(sandbox.smsSendAtMs_(10 * H, 7 * H), 7 * H);
+  assert.equal(sandbox.smsDayDue_(10 * H, 7 * H, 7 * H), true);
+  assert.equal(sandbox.smsDayDue_(10 * H, 7 * H, 7 * H - 1), false);
+  assert.equal(sandbox.smsDayDue_(10 * H, 7 * H, 9 * H), true);
+  assert.equal(sandbox.smsDayDue_(10 * H, 7 * H, 9 * H + 1), false);
+  assert.equal(sandbox.smsSendAtMs_(8 * H, 7 * H), 6 * H);
+  assert.equal(sandbox.smsDayDue_(8 * H, 7 * H, 6.5 * H), true);
+  assert.equal(sandbox.smsDayDue_(8 * H, 7 * H, 8 * H), false);
+  assert.match(code, /Polly\.Matthew-Neural/);
+  for (const src of [code, backend]) {
+    assert.match(src, /Messages\.json/);
+    assert.match(src, /runTextsLocked_\(\)/);
+    assert.match(src, /type: 'sms'/);
+    assert.match(src, /d\.a === 'textnow'/);
+    const manual = grab(src, 'textNow_');
+    const scheduled = grab(src, 'runTextsLocked_');
+    assert.match(manual, /guardDial_/);
+    assert.match(scheduled, /guardDial_/);
+    assert.match(scheduled, /smsReminded/);
+    assert.doesNotMatch(manual, /smsReminded|hardness|internalNotes|MailApp/);
+    assert.doesNotMatch(scheduled, /hardness|internalNotes|MailApp/);
+    assert.match(scheduled, /if \(!cfg\.on\) return \{ ok: true, skipped: 'off' \}/);
+  }
+  const app = fs.readFileSync('app.js', 'utf8');
+  assert.match(app, /Text reminders/);
+  assert.match(app, /id="textnow"/);
+  assert.match(app, /id="smson"/);
+  assert.match(app, /id="smstest"/);
+  assert.match(app, /8504453792/);
+  assert.match(app, /'the test phone'/);
 });
