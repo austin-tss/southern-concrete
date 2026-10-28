@@ -123,7 +123,7 @@ test('delivery address ignores the customer while test mode is on', () => {
   assert.equal(off.replyTo, co.email);
 });
 
-test('quote email has A/B/C/Other, test banner, and no customer recipient', () => {
+test('quote email keeps the estimate and leaves out action buttons', () => {
   const job = {
     id: 'SCC-1', est: 'SCC-EST-2026-0001', name: 'Pat Homeowner',
     address: '1 Call St, Tallahassee, FL', email: 'pat@example.com',
@@ -137,9 +137,13 @@ test('quote email has A/B/C/Other, test banner, and no customer recipient', () =
     photosHtml: '<img alt="site">',
     link: (k) => 'https://script.example/?ans=' + k
   });
-  for (const bit of ['A) Approve', 'B) Approve with changes', 'C) Decline', 'Other', 'Dominion', '480 sq ft', '$6.50', TEST_TO, 'TEST MODE']) {
+  for (const bit of ['Dominion', '480 sq ft', '$6.50', TEST_TO, 'TEST MODE']) {
     assert.match(html, new RegExp(bit.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
+  for (const bit of ['A) Approve', 'B) Approve with changes', 'C) Decline', 'Other — send a question', 'Pay now', 'Pay over time', 'Ready to coat']) {
+    assert.doesNotMatch(html, new RegExp(bit.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+  assert.doesNotMatch(html, /display:block;margin:8px 0;padding:15px/);
   assert.doesNotMatch(html, /mailto:pat@example.com/i);
   assert.doesNotMatch(html, /\b(tree|stump|pruning|fielder|oak)\b/i);
 });
@@ -184,8 +188,8 @@ test('pay and financing links appear only when settings allow them', () => {
   const base = { co, colors, job, testMode: false, testTo: TEST_TO, logoSrc: 'cid:logo', link: (k) => 'https://script.example/?ans=' + k };
   assert.doesNotMatch(q.quoteEmailHtml(base), /Pay now/);
   const on = Object.assign({}, base, { settings: { payLink: 'https://pay.example/scc', finLink: 'https://finance.example/scc', finMin: 1000 } });
-  assert.match(q.quoteEmailHtml(on), /Pay now/);
-  assert.match(q.quoteEmailHtml(on), /Pay over time/);
+  assert.doesNotMatch(q.quoteEmailHtml(on), /Pay now/);
+  assert.doesNotMatch(q.quoteEmailHtml(on), /Pay over time/);
   assert.match(q.invoiceEmailHtml(on), /Pay now/);
   const small = Object.assign({}, base, { job: Object.assign({}, job, { total: 400, invoice: { amount: '$400.00' } }), settings: { payLink: '', finLink: 'https://finance.example/scc', finMin: 1000 } });
   assert.doesNotMatch(q.invoiceEmailHtml(small), /Pay over time/);
@@ -242,7 +246,8 @@ test('hardness, notes, and AI measure notes never reach a customer-facing render
   assert.equal(stripped.aiNote, undefined);
   assert.equal(stripped.callAnswers, undefined);
   assert.equal(stripped.crewNotes, 'Floor was clear.');
-  assert.match(q.quoteEmailHtml(face(dirty)), /A\) Approve/);
+  assert.doesNotMatch(q.quoteEmailHtml(face(dirty)), /A\) Approve/);
+  assert.match(q.quoteEmailHtml(face(dirty)), /Dominion/);
   assert.match(q.pdfHtml(face(dirty)), /Dominion/);
   assert.match(q.recapEmailHtml(face(dirty)), /Floor was clear/);
   assert.match(q.invoiceEmailHtml(face(dirty)), /\$3,120\.00/);

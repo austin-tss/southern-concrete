@@ -2300,12 +2300,12 @@ function setScreen() {
 <p class="muted" style="margin:0 0 12px">Links customers see in their emails. Leave a box empty to hide that button.</p>
 ${appearanceRow()}
 ${srow('pay', 'Payments', `<label>Payment link (Stripe, Square or PayPal)</label><input id="sp" type="url" inputmode="url" autocomplete="off" autocapitalize="off" placeholder="https://..." value="${esc(S.payLink || '')}" oninput="setSumText()">
-<p class="muted" style="margin:6px 0 0">Adds a Pay now button to quote and invoice emails. Create a payment link in Stripe, Square or PayPal and paste it here.</p>`)}
+<p class="muted" style="margin:6px 0 0">Adds a Pay now button to invoice emails. Create a payment link in Stripe, Square or PayPal and paste it here.</p>`)}
 ${srow('rev', 'Reviews', `<label>Google review link</label><input id="sr" type="url" inputmode="url" autocomplete="off" autocapitalize="off" placeholder="https://g.page/r/.../review" value="${esc(S.reviewLink || '')}" oninput="setSumText()">
 <p class="muted" style="margin:6px 0 0">Used by the Request review button on finished and paid jobs. In your Google Business Profile, tap Ask for reviews and copy the link.</p>`)}
 ${srow('fin', 'Pay over time', `<label>Financing link</label><input id="sf" type="url" inputmode="url" autocomplete="off" autocapitalize="off" placeholder="https://..." value="${esc(S.finLink || '')}" oninput="setSumText()">
-<label>Show it on quotes and invoices of at least ($)</label><input id="sm" inputmode="decimal" value="${esc(S.finMin == null ? 1000 : S.finMin)}" oninput="setSumText()">
-<p class="muted" style="margin:6px 0 0">Adds a Pay over time button. Hidden when no link is set or the amount is below this number.</p>`)}
+<label>Show it on invoices of at least ($)</label><input id="sm" inputmode="decimal" value="${esc(S.finMin == null ? 1000 : S.finMin)}" oninput="setSumText()">
+<p class="muted" style="margin:6px 0 0">Adds a Pay over time button to invoice emails. Hidden when no link is set or the amount is below this number.</p>`)}
 ${srow('mail', 'Customer email', `<p class="muted" style="margin:0 0 8px">This wording is the estimate email. A blank box keeps the original line.</p>
 <label>Subject</label><textarea id="qsub" rows="2" oninput="setSumText()">${esc(S.quoteSubject || SCCQuote.QUOTE_EMAIL_SUBJECT)}</textarea>
 <label>Message</label><textarea id="qbody" rows="6" oninput="setSumText()">${esc(S.quoteBody || SCCQuote.QUOTE_EMAIL_BODY)}</textarea>

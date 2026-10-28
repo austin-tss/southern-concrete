@@ -139,8 +139,11 @@ try {
   const quote = inbox.find((m) => m.kind === 'quote');
   const recap = inbox.find((m) => m.kind === 'recap');
   const invoice = inbox.find((m) => m.kind === 'invoice');
-  for (const bit of ['A) Approve', 'B) Approve with changes', 'C) Decline', 'Other', 'Dominion', '$3,120.00']) {
+  for (const bit of ['Dominion', '$3,120.00']) {
     if (!quote.html.includes(bit)) fail('quote missing ' + bit);
+  }
+  for (const bit of ['A) Approve', 'B) Approve with changes', 'C) Decline', 'Pay now', 'Ready to coat']) {
+    if (quote.html.includes(bit)) fail('quote still has ' + bit);
   }
   if (quote.html.includes('mailto:' + customer)) fail('quote links to the customer');
   for (const bit of ['Before', 'After', 'Refer a neighbor', 'southernconcretecoatingsllc.com']) {

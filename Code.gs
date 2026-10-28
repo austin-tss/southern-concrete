@@ -513,22 +513,12 @@ function payButtons(o){
 }
 function quoteEmailHtml(o){
   o=customerFace(o);
-  var j=o.job,g=o.colors.g,dg=o.colors.dg,n=o.colors.n;
-  function btn(k,t,c){
-    return '<a href="'+o.link(k)+'" style="display:block;margin:8px 0;padding:15px;background:'+c+';color:#fff;text-decoration:none;border-radius:10px;font-weight:bold;font-size:16px;text-align:center">'+t+'</a>';
-  }
+  var j=o.job,n=o.colors.n;
   var copy=quoteEmailCopy(o);
   var inner=greetLine('Dear',j.name)+
     '<p style="line-height:1.6">'+emailText(copy.body)+'</p>'+
     metaBlock(j,'Estimate #',j.est,o.colors)+specRows(j, o.settings&&o.settings.form)+itemsTable(j,o.colors)+additionalNotesHtml(j,o.colors)+
     (o.photosHtml?'<p style="margin:18px 0 6px"><b style="color:'+n+'">Site photos</b></p>'+o.photosHtml:'')+
-    '<div style="background:#f4f5f8;border-radius:10px;padding:16px;margin:20px 0"><p style="margin:0 0 4px;font-size:16px"><b style="color:'+n+'">Ready to coat the floor? Tap one:</b></p>'+
-    '<p style="margin:0 0 6px;color:#5c6370;font-size:13px">Next we will ask when the crew can have the floor.</p>'+
-    btn('A','A) Approve — schedule my floor',g)+
-    btn('B','B) Approve with changes',dg)+
-    btn('C','C) Decline for now','#8a8f98')+
-    btn('O','Other — send a question',n)+'</div>'+
-    payButtons(o)+
     '<p style="font-size:13px;color:#5c6370;line-height:1.6"><b>Terms:</b> '+TERMS.join(' ')+'</p>'+
     '<p>'+emailText(copy.sign)+'</p>';
   return emailShell(Object.assign({},o,{title:'Estimate',sub:j.est}),inner);
@@ -539,7 +529,7 @@ function pdfHtml(o){
   var inner=metaBlock(j,'Estimate #',j.est,o.colors)+specRows(j, o.settings&&o.settings.form)+itemsTable(j,o.colors)+additionalNotesHtml(j,o.colors)+
     '<h3 style="color:'+o.colors.n+';margin:22px 0 6px;font-size:15px">Terms</h3><ul style="font-size:13px;color:#33383d;line-height:1.6;padding-left:18px">'+
     TERMS.map(function(t){return '<li>'+escHtml(t)+'</li>';}).join('')+'</ul>'+
-    '<p style="font-size:13px">To approve, use the buttons in the estimate email or call '+escHtml(o.co.phone)+'.</p>'+
+    '<p style="font-size:13px">To approve, call '+escHtml(o.co.phone)+'.</p>'+
     '<table width="100%" style="margin-top:28px;font-size:13px"><tr><td>Customer signature: ____________________________</td><td style="text-align:right">Date: ______________</td></tr></table>';
   return '<html><head><style>@page{margin:28px}body{font-family:Arial,Helvetica,sans-serif}</style></head><body>'+
     emailShell(Object.assign({},o,{title:'Estimate',sub:j.est,testMode:false}),inner)+'</body></html>';
