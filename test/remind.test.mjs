@@ -22,7 +22,7 @@ function grab(src, name) {
   throw new Error('unclosed ' + name);
 }
 
-const names = ['e164_', 'reminderCfg_', 'reminderDial_', 'guardDial_', 'reminderDue_', 'reminderSay_', 'xmlEsc_', 'reminderTwiml_', 'reminderFinal_'];
+const names = ['e164_', 'reminderCfg_', 'reminderDial_', 'guardDial_', 'reminderDue_', 'reminderSay_', 'manualSay_', 'xmlEsc_', 'reminderTwiml_', 'reminderFinal_'];
 const sandbox = {};
 vm.createContext(sandbox);
 vm.runInContext(names.map((n) => grab(code, n)).join('\n'), sandbox);
@@ -72,6 +72,7 @@ test('reminder script reads the appointment', () => {
   assert.equal(sandbox.reminderFinal_('failed'), true);
   assert.equal(sandbox.reminderFinal_('canceled'), true);
   assert.equal(sandbox.reminderFinal_('queued'), false);
+  assert.equal(sandbox.manualSay_(), 'This is Southern Concrete Coatings calling with a reminder about your upcoming service. Call us with any questions.');
 });
 
 test('hourly trigger and Twilio stay in the script', () => {
@@ -95,4 +96,25 @@ test('hourly trigger and Twilio stay in the script', () => {
   assert.match(app, /id="remtest"/);
   assert.match(app, /Reminder call log/);
   assert.match(app, /id="remindcard"/);
+});
+
+test('manual call dials the customer and leaves the job unmarked', () => {
+  for (const src of [code, backend]) {
+    const body = grab(src, 'remindNow_');
+    assert.match(src, /d\.a === 'remindnow'/);
+    assert.match(body, /manual: true/);
+    assert.match(body, /twilioCall_\(creds, phone, say\)/);
+    assert.match(body, /manualSay_\(\)/);
+    assert.match(body, /upcomingJob_/);
+    assert.doesNotMatch(body, /reminded/);
+    assert.doesNotMatch(body, /reminderDial_/);
+    assert.doesNotMatch(body, /reminderCfg_/);
+    assert.doesNotMatch(body, /MailApp/);
+  }
+  const app = fs.readFileSync('app.js', 'utf8');
+  assert.match(app, /id="callnow"/);
+  assert.match(app, /Call ' \+ c\.name \+ ' at ' \+ number \+ ' now\?/);
+  assert.match(app, /a: 'remindnow'/);
+  assert.match(app, /role !== 'Owner'/);
+  assert.match(app, /c\.manual \? 'Manual'/);
 });

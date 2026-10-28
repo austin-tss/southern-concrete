@@ -1705,7 +1705,9 @@ ${c.addrs.map((a) => `<p style="margin:0 0 6px;font-size:16px">📍 <a href="htt
 <p class="muted" style="margin:6px 0 0">📧 ${esc(c.email) || '<b style="color:#b42318">No email</b>'}</p>
 <p class="muted" style="margin:6px 0 0">📞 ${c.phone ? esc(fmtPh(c.phone)) : 'No phone yet'} <a href="#" onclick="editPhone(CK_ids());return false">${c.phone ? 'edit' : 'add'}</a></p>
 <div class="row">${c.phone ? `<a class="btn d sm" href="tel:${t}">Call</a><a class="btn d sm" href="sms:${t}">Text</a>` : ''}${c.email ? `<a class="btn d sm" href="mailto:${esc(c.email)}">Email</a>` : ''}</div>
+${role === 'Owner' ? `<button class="btn n" id="callnow" type="button" onclick="callNow()">Call now</button>` : ''}
 <button class="btn n" type="button" onclick="CEDIT=!CEDIT;render()">Edit customer</button></div>
+${custCallLog(c)}
 ${CEDIT ? `<div class="card" id="cedit"><h2>Edit customer</h2><p class="muted" style="margin-top:0">This updates every job linked to this customer.</p>
 <label>Name</label><input id="cnm" autocomplete="name" value="${esc(c.name)}">
 <label>Phone</label><input id="cph" type="tel" value="${esc(c.phone || '')}">
@@ -1722,6 +1724,30 @@ ${CEDIT ? `<div class="card" id="cedit"><h2>Edit customer</h2><p class="muted" s
 <div class="card"><h2>Job history (${c.n})</h2>${c.jobs.map((j) => `<button class="job" type="button" onclick="jview('${j.id}')"><span class="t">${j.total != null ? SCCQuote.money(j.total) : ''}</span><b>${esc(j.address)}</b><div class="a">${j.est ? esc(j.est) + ' · ' : ''}${esc(longD(etD(j.created)))}</div><span class="badge" style="background:${SC[stat(j)] || '#8a8f98'}">${ST[stat(j)] || esc(j.status)}</span></button>`).join('')}</div>`;
 }
 function CK_ids() { const c = custs().find((x) => x.k === CK); return c ? c.jobs.map((j) => j.id) : []; }
+function custCallLog(c) {
+  const ids = {};
+  (c.jobs || []).forEach((j) => { ids[j.id] = 1; });
+  const rows = (CALLS || []).filter((row) => ids[row.jobId]);
+  const body = rows.length ? rows.slice(0, 6).map(remindLine).join('') : '<p class="muted" style="margin:0">No reminder call yet.</p>';
+  return `<div class="card" id="custcall"><h2>Reminder call</h2>${body}</div>`;
+}
+async function callNow() {
+  if (role !== 'Owner') return;
+  const c = custs().find((x) => x.k === CK);
+  if (!c) return;
+  const number = fmtPh(c.phone);
+  if (!digits(c.phone) || digits(c.phone).length < 10) return toast('Add a phone first');
+  if (!confirm('Call ' + c.name + ' at ' + number + ' now?')) return;
+  const b = $('#callnow');
+  if (b) { b.disabled = true; b.textContent = 'Calling…'; }
+  try {
+    const r = await api({ a: 'remindnow', pin: ownerPin(), ids: c.jobs.map((j) => j.id) });
+    if (Array.isArray(r.callLog)) CALLS = r.callLog;
+    const outcome = r.called ? ((r.status || 'queued') + (r.sid ? ' · ' + r.sid : '')) : (r.error || 'Call not placed');
+    toast(outcome);
+  } catch (e) { toast(e.message); }
+  if (view === 'cust') render();
+}
 async function saveCust() {
   const c = custs().find((x) => x.k === CK);
   if (!c) return;
@@ -2029,7 +2055,7 @@ function callWhen(iso) {
   catch (e) { return String(iso || ''); }
 }
 function remindLine(c) {
-  const who = c.test ? 'Test' : 'Live';
+  const who = c.manual ? 'Manual' : (c.test ? 'Test' : 'Live');
   const num = c.to ? fmtPh(c.to) : '';
   const outcome = c.error || c.status || 'sent';
   return `<p style="margin:6px 0">${esc(callWhen(c.at))} · ${esc(who)}${num ? ' · ' + esc(num) : ''} · ${esc(outcome)}${c.sid ? ' · ' + esc(c.sid) : ''}</p>`;
@@ -2045,7 +2071,7 @@ function remindLogHtml() {
   const rows = (CALLS || []).slice(0, 12);
   if (!rows.length) return '<p class="muted" id="remlog">No reminder calls yet.</p>';
   return '<div id="remlog">' + rows.map((c) => {
-    const who = c.test ? 'Test' : 'Live';
+    const who = c.manual ? 'Manual' : (c.test ? 'Test' : 'Live');
     const num = c.to ? fmtPh(c.to) : '';
     const outcome = c.error || c.status || 'sent';
     return `<p style="margin:6px 0">${esc(callWhen(c.at))} · ${esc(c.customer || c.jobId || 'Call')} · ${esc(who)}${num ? ' · ' + esc(num) : ''} · ${esc(outcome)}</p>`;

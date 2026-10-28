@@ -129,6 +129,28 @@ function handle(d) {
     if (!pinOk(d)) return { ok: false, err: 'Wrong PIN' };
     return { ok: true, installed: true };
   }
+  if (d.a === 'remindnow') {
+    if (!pinOk(d)) return { ok: false, err: 'Wrong PIN' };
+    const ids = Array.isArray(d.ids) ? d.ids : [];
+    const mine = ids.map((id) => jobs.find((j) => j.id === id)).filter(Boolean);
+    const job = mine[0];
+    const phone = (mine.find((j) => j.phone) || {}).phone || '';
+    callLog.unshift({
+      id: 'RC' + (seq++),
+      at: new Date().toISOString(),
+      jobId: job ? job.id : '',
+      customer: job ? (job.name || '') : '',
+      to: phone,
+      test: false,
+      manual: true,
+      sid: '',
+      status: '',
+      error: phone ? 'not configured' : 'no phone',
+      forStart: '',
+      final: false
+    });
+    return { ok: true, called: false, error: phone ? 'not configured' : 'no phone', callLog: callLog.slice(0, 80) };
+  }
   if (d.a === 'feedback') {
     if (!pinOk(d)) return { ok: false, err: 'Wrong PIN' };
     const text = String(d.text || '').trim();

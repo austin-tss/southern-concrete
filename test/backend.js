@@ -287,6 +287,9 @@ function reminderSay_(jobName, dateLabel, timeLabel, address) {
   line += '. Call us if you need to reschedule.';
   return line;
 }
+function manualSay_() {
+  return 'This is Southern Concrete Coatings calling with a reminder about your upcoming service. Call us with any questions.';
+}
 function xmlEsc_(s) {
   return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
@@ -1150,13 +1153,14 @@ function doPost(e) {
       mailFeedback_(fbList[fbList.length - 1]);
       return out_({ ok: true });
     }
-    if (d.a === 'remindtest' || d.a === 'remindinstall') {
+    if (d.a === 'remindtest' || d.a === 'remindinstall' || d.a === 'remindnow') {
       if (!pinOk_(d)) return out_({ ok: false, err: 'Wrong PIN' });
       if (d.a === 'remindinstall') {
         try { installReminderTrigger(); }
         catch (eInst) { return out_({ ok: false, err: String(eInst.message || eInst).slice(0, 180) }); }
         return out_({ ok: true, installed: true });
       }
+      if (d.a === 'remindnow') return out_(remindNow_(d.ids));
       return out_(remindTest_(d.testPhone));
     }
     if (d.a === 'settings' || d.a === 'explist' || d.a === 'expadd' || d.a === 'expdel' || d.a === 'rcscan' || d.a === 'rcrescan' || d.a === 'rcdrop') {
@@ -1386,7 +1390,8 @@ function saveCallLog_(list) {
 function logReminder_(row) {
   var list = callLog_();
   var err = String(row && row.error || '');
-  if (err === 'not configured' && list.length && list[0].error === 'not configured') {
+  var manual = !!(row && row.manual);
+  if (!manual && err === 'not configured' && list.length && list[0].error === 'not configured') {
     var prev = Date.parse(list[0].at || '');
     if (!isNaN(prev) && Date.now() - prev < 6 * 36e5) return list;
   }
@@ -1397,6 +1402,7 @@ function logReminder_(row) {
     customer: String(row && row.customer || '').slice(0, 120),
     to: String(row && row.to || '').slice(0, 20),
     test: !!(row && row.test),
+    manual: manual,
     sid: String(row && row.sid || '').slice(0, 64),
     status: String(row && row.status || '').slice(0, 40),
     error: err.slice(0, 180),
@@ -1673,6 +1679,61 @@ function remindTest_(testPhoneRaw) {
     sid: made.sid || '', status: made.status || '', error: made.error || '',
     forStart: Utilities.formatDate(start, 'America/New_York', "yyyy-MM-dd'T'HH:mm"),
     final: reminderFinal_(made.status)
+  });
+  return { ok: true, called: !!made.ok, sid: made.sid || '', status: made.status || '', error: made.error || '', callLog: log.slice(0, 80) };
+}
+function upcomingJob_(jobs, blocks, now) {
+  var best = null, bestJob = null, i, appt;
+  var list = Array.isArray(jobs) ? jobs : [];
+  for (i = 0; i < list.length; i++) {
+    appt = jobAppt_(list[i], blocks, now);
+    if (!appt) continue;
+    if (!best || appt.start.getTime() < best.start.getTime()) {
+      best = appt;
+      bestJob = list[i];
+    }
+  }
+  return bestJob ? { job: bestJob, appt: best } : null;
+}
+function remindNow_(ids) {
+  var raw = Array.isArray(ids) ? ids : [];
+  var jobs = load_();
+  if (!Array.isArray(jobs)) jobs = [];
+  var mine = [], seen = {}, i, k, id;
+  for (i = 0; i < raw.length && mine.length < 40; i++) {
+    id = String(raw[i] || '');
+    if (!id || seen[id]) continue;
+    for (k = 0; k < jobs.length; k++) {
+      if (jobs[k] && jobs[k].id === id) { mine.push(jobs[k]); seen[id] = 1; break; }
+    }
+  }
+  var name = mine.length && mine[0].name ? String(mine[0].name) : '';
+  var phone = '';
+  var fallbackId = mine.length ? String(mine[0].id || '') : '';
+  for (i = 0; i < mine.length; i++) if (!phone) phone = e164_(mine[i].phone);
+  var blocks = load_('blocks.json');
+  if (!Array.isArray(blocks)) blocks = [];
+  var hit = upcomingJob_(mine, blocks, new Date());
+  var jobId = hit ? String(hit.job.id || '') : fallbackId;
+  var say = hit ? reminderSay_(jobLabel_(hit.job), hit.appt.dateLabel, hit.appt.timeLabel, hit.job.address || '') : manualSay_();
+  var forStart = hit ? hit.appt.key : '';
+  var customer = (hit && hit.job.name) ? String(hit.job.name) : name;
+  var log, creds, made;
+  if (!phone) {
+    log = logReminder_({ jobId: jobId, customer: customer, to: '', test: false, manual: true, error: 'no phone', status: 'skipped' });
+    return { ok: true, called: false, error: 'no phone', callLog: log.slice(0, 80) };
+  }
+  creds = twilioCreds_();
+  if (!creds) {
+    log = logReminder_({ jobId: jobId, customer: customer, to: phone, test: false, manual: true, error: 'not configured', status: '' });
+    return { ok: true, called: false, error: 'not configured', callLog: log.slice(0, 80) };
+  }
+  try { made = twilioCall_(creds, phone, say); }
+  catch (eNow) { made = { ok: false, error: String(eNow.message || eNow).slice(0, 180) }; }
+  log = logReminder_({
+    jobId: jobId, customer: customer, to: phone, test: false, manual: true,
+    sid: made.sid || '', status: made.status || '', error: made.error || '',
+    forStart: forStart, final: reminderFinal_(made.status)
   });
   return { ok: true, called: !!made.ok, sid: made.sid || '', status: made.status || '', error: made.error || '', callLog: log.slice(0, 80) };
 }
