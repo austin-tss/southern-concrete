@@ -201,6 +201,7 @@ function handle(d) {
         name: 'Pat Homeowner', phone: '850-555-0148', email: 'pat@example.com',
         address: '1 Call St, Tallahassee, FL', sqft: 480, system: 'Garage floor flake system',
         color: 'Dominion', prep: 'Diamond grinding, Crack repair', cure: '24 hours', rate: 6.5,
+        vertical: 40, vrate: 8,
         extras: 'moisture mitigation $350', notes: 'Gate is on the left',
         hardness: 8, hardnessHow: 'ZXHARD', internalNotes: 'ZXNOTE', aiNote: 'ZXAI'
       }

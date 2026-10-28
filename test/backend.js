@@ -216,7 +216,8 @@ function settings_() {
     quoteBcc: quoteBcc_(o.quoteBcc),
     galleryHide: galleryHide_(o.galleryHide),
     reminders: reminderCfg_(o),
-    texts: smsCfg_(o)
+    texts: smsCfg_(o),
+    voice: !!scriptProp_('GEMINI_API_KEY')
   };
 }
 function moneyNum_(v) {
@@ -893,26 +894,58 @@ function fillReady_(fields) {
   if (!n) return { ok: true, ready: false, message: 'Could not fill that in. The notes on this phone were used instead.' };
   return { ok: true, ready: true, filled: n, fields: fields };
 }
-function quoteFill_(text) {
+function fillKeep_(form, fields) {
+  var list = (form && form.fields) || [];
+  var shown = {};
+  var i;
+  for (i = 0; i < list.length; i++) if (list[i] && list[i].id && list[i].show !== false) shown[list[i].id] = 1;
+  var map = { notes: 'addl' };
+  var keep = { items: 1, extras: 1, timeline: 1 };
+  var out = {}, k, id;
+  fields = fields || {};
+  for (k in fields) {
+    if (fields[k] == null || fields[k] === '') continue;
+    if (k === 'internalNotes' || k === 'aiNote') continue;
+    id = map[k] || k;
+    if (keep[k] || !list.length || shown[id]) out[k] = fields[k];
+  }
+  if (!shown.hardness) delete out.hardnessHow;
+  return out;
+}
+function quoteFill_(d) {
   // GEMINI_API_KEY and optional GEMINI_MODEL are Script Properties. Never paste the key into this file.
-  var spoken = String(text || '').trim();
-  if (!spoken) return { ok: true, ready: false, message: 'Say or type the job first.' };
+  // Nothing is saved or emailed here. The form is filled for review.
+  var spoken = '', audio = '', mime = 'audio/webm';
+  if (d && typeof d === 'object') {
+    spoken = String(d.text || '').trim();
+    audio = String(d.audio || '').replace(/^data:[^,]*,/, '');
+    mime = String(d.mime || 'audio/webm').split(';')[0].trim().toLowerCase();
+  } else spoken = String(d || '').trim();
+  if (mime === 'audio/x-m4a' || mime === 'audio/m4a') mime = 'audio/mp4';
+  if (!spoken && !audio) return { ok: true, ready: false, message: 'Say or type the job first.' };
+  if (audio && audio.length > 14000000) return { ok: false, err: 'That recording is too long. Keep it under about 5 minutes.' };
   spoken = spoken.slice(0, 8000);
   var form = normalizeForm(settings_().form);
   FILL_SYSTEMS = form.systems.map(function (s) { return s.name; });
   FILL_PREPS = form.addons.map(function (a) { return a.name; });
   var colorList = form.colors.join(', ') || 'Wolf Gray, Dominion';
-  var local = interpretSpeech_(spoken);
+  var local = spoken ? interpretSpeech_(spoken) : {};
   var key = scriptProp_('GEMINI_API_KEY');
-  if (!key) return fillReady_(local).ready ? fillReady_(local) : { ok: true, ready: false, message: 'AI fill not set up yet' };
-  var prompt = 'You turn a contractor spoken note into a concrete coating estimate. The note may contain speech-to-text mistakes. Fix those before you answer. cutting means coating. harness means hardness, a Mohs number from 1 to 10. A floor size given in ft is square feet unless they say long, wide, door, or vertical. vertical is vertical feet, a number, only when the note says vertical. vrate is dollars per vertical foot. Do not count vertical feet as sqft. Return one JSON object and nothing else. Keys you may use: name, phone, email, address, sqft, vertical, vrate, jobType, system, color, prep, cure, rate, items, notes, hardness. sqft, rate, and hardness are numbers. jobType is Residential or Commercial. A house or home is Residential. system must be exactly one of: ' + FILL_SYSTEMS.join('; ') + '. prep is a comma-separated list using only: ' + FILL_PREPS.join('; ') + '. cure, when you know it, is exactly one of: ' + FILL_CURES.join('; ') + '. color is the flake or coating color with spelling corrected. Real color names: ' + colorList + '. items is an array of objects with title, detail, and price. price is a number, or null when the line is included. Include the main system line, and a separate line for each prep add-on such as crack repair and diamond grinding. When sqft and rate are both known, the main line price is sqft times rate. notes is optional customer-facing additional text with no price. Omit notes when the customer does not need extra text. Omit any key you cannot tell. Do not invent a phone or email. Never put hardness, a Mohs number, or private notes into notes or items.';
-  prompt += '\n\nSpoken note:\n' + spoken;
-  var gotFetch = geminiGenerate_(key, [{ text: prompt }]);
-  if (!gotFetch || gotFetch.code < 200 || gotFetch.code >= 300) return fillReady_(local);
+  if (!key) {
+    if (!spoken) return { ok: true, ready: false, message: 'AI fill not set up yet' };
+    var offline = fillReady_(fillKeep_(form, local));
+    return offline.ready ? offline : { ok: true, ready: false, message: 'AI fill not set up yet' };
+  }
+  var prompt = 'You turn a contractor spoken note into a concrete coating estimate for Southern Concrete Coatings. The note may contain speech-to-text mistakes. Fix those before you answer. cutting means coating. harness means hardness, a Mohs number from 1 to 10. A floor size given in ft is square feet unless they say long, wide, door, or vertical. vertical is vertical feet, a number, only when the note says vertical. vrate is dollars per vertical foot. Do not count vertical feet as sqft. Return one JSON object and nothing else. Keys you may use: name, phone, email, address, sqft, vertical, vrate, jobType, system, color, prep, cure, rate, items, notes, hardness. sqft, rate, vrate, and hardness are numbers. jobType is Residential or Commercial. A house or home is Residential. system must be exactly one of: ' + FILL_SYSTEMS.join('; ') + '. prep is a comma-separated list using only: ' + FILL_PREPS.join('; ') + '. cure, when you know it, is exactly one of: ' + FILL_CURES.join('; ') + '. color is the flake or coating color with spelling corrected. Real color names: ' + colorList + '. items is an array of objects with title, detail, and price. price is a number, or null when the line is included. Include the main system line, and a separate line for each prep add-on such as crack repair and diamond grinding. When sqft and rate are both known, the main line price is sqft times rate. When vertical and vrate are both known, do not fold that money into the floor line. notes is optional customer-facing additional text with no price. Omit notes when the customer does not need extra text. Omit any key you cannot tell. Do not invent a phone or email. Never put hardness, a Mohs number, or private notes into notes or items.';
+  var parts = [{ text: prompt }];
+  if (audio) parts.push({ inline_data: { mime_type: mime || 'audio/webm', data: audio } });
+  if (spoken) parts.push({ text: 'Spoken note:\n' + spoken });
+  var gotFetch = geminiGenerate_(key, parts);
+  if (!gotFetch || gotFetch.code < 200 || gotFetch.code >= 300) return fillReady_(fillKeep_(form, local));
   var parsed;
-  try { parsed = JSON.parse(gotFetch.body); } catch (eParse) { return fillReady_(local); }
+  try { parsed = JSON.parse(gotFetch.body); } catch (eParse) { return fillReady_(fillKeep_(form, local)); }
   var got = normalizeFill_(geminiText_(parsed));
-  return fillReady_(mergeFill_(local, got || {}));
+  return fillReady_(fillKeep_(form, mergeFill_(local, got || {})));
 }
 function aiDebug_() {
   var key = scriptProp_('GEMINI_API_KEY');
@@ -1340,7 +1373,7 @@ function doPost(e) {
     }
     if (d.a === 'qfill') {
       if (!pinOk_(d)) return out_({ ok: false, err: 'Wrong PIN' });
-      return out_(quoteFill_(d.text));
+      return out_(quoteFill_(d));
     }
     if (d.a === 'aidebug') {
       if (!pinOk_(d)) return out_({ ok: false, err: 'Wrong PIN' });

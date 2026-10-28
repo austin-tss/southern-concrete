@@ -75,10 +75,28 @@ test('talk-through fill returns quote fields and leaves internal notes out', () 
   assert.match(fill, /scriptProp_\('GEMINI_API_KEY'\)/);
   assert.match(fill, /geminiGenerate_\(/);
   assert.match(fill, /customer-facing additional text/);
+  assert.match(fill, /inline_data/);
+  assert.match(fill, /vertical/);
   assert.doesNotMatch(fill, /MailApp|sendMail_|sendQuote_/);
+  const keep = {};
+  vm.createContext(keep);
+  vm.runInContext(code.slice(code.indexOf('function fillKeep_'), code.indexOf('function quoteFill_')), keep);
+  const hidden = keep.fillKeep_({ fields: [
+    { id: 'vertical', show: false }, { id: 'vrate', show: false }, { id: 'sqft', show: true }, { id: 'hardness', show: true }, { id: 'addl', show: true }
+  ] }, { vertical: 40, vrate: 8, sqft: 480, hardness: 6, notes: 'Gate code', internalNotes: 'ZXNOTE', aiNote: 'ZXAI' });
+  assert.equal(hidden.vertical, undefined);
+  assert.equal(hidden.vrate, undefined);
+  assert.equal(hidden.sqft, 480);
+  assert.equal(hidden.hardness, 6);
+  assert.equal(hidden.notes, 'Gate code');
+  assert.equal(hidden.internalNotes, undefined);
+  assert.equal(hidden.aiNote, undefined);
   assert.match(code, /d\.a === 'qfill'/);
   assert.match(app, /Talk it through/);
   assert.match(app, /Fill in the quote/);
+  assert.match(app, /Stop and fill the quote/);
+  assert.match(app, /Check everything before you send/);
+  assert.match(app, /interimResults = true/);
   assert.match(app, /Customer email/);
   assert.match(app, /Reset to default/);
   assert.match(code, /quoteBody/);

@@ -1003,9 +1003,13 @@ function setPrep(value) {
 }
 function applyFill(f) {
   if (!f || typeof f !== 'object') return;
+  const open = { nm: 'name', ph: 'phone', em: 'email', ad: 'address', sqft: 'sqft', vertical: 'vertical', vrate: 'vrate', system: 'system', color: 'color', jobtype: 'jobType', cure: 'cure', rate: 'rate', hard: 'hardness', addl: 'addl', qt: 'quote' };
   const put = (id, v) => {
+    const key = open[id] || id;
+    if (!formOn(key)) return;
     const el = document.getElementById(id);
     if (!el || v == null || String(v).trim() === '') return;
+    if (String(el.value || '').trim()) return;
     el.value = String(v).trim();
   };
   put('nm', f.name);
@@ -1015,25 +1019,171 @@ function applyFill(f) {
   put('sqft', f.sqft);
   put('vertical', f.vertical);
   put('vrate', f.vrate);
-  setChoice('system', f.system, systemList());
+  if (formOn('system') && emptyChoice('system')) setChoice('system', f.system, systemList());
   put('color', f.color);
-  if (f.jobType) setChoice('jobtype', f.jobType, ['Residential', 'Commercial']);
-  if (f.hardness != null && String(f.hardness).trim() && $('#hard')) $('#hard').value = String(f.hardness);
-  if (f.prep != null && String(f.prep).trim()) setPrep(f.prep);
+  if (f.jobType && formOn('jobType') && emptyChoice('jobtype')) setChoice('jobtype', f.jobType, ['Residential', 'Commercial']);
+  if (formOn('hardness')) put('hard', f.hardness);
+  if (f.prep != null && String(f.prep).trim() && formOn('prep') && ![...document.querySelectorAll('#prepbox input')].some((x) => x.checked)) setPrep(f.prep);
   const cureText = String(f.cure || '').trim();
   const timeline = String(f.timeline || '').trim();
-  if (cureText) setChoice('cure', cureText, CURES);
-  else if (timeline) setChoice('cure', timeline, CURES);
+  if (formOn('cure') && emptyChoice('cure')) {
+    if (cureText) setChoice('cure', cureText, CURES);
+    else if (timeline) setChoice('cure', timeline, CURES);
+  }
   put('rate', f.rate);
-  put('addl', f.notes);
+  if (formOn('addl')) put('addl', f.notes);
   const extraBits = [f.extras, cureText && timeline ? timeline : ''].map((v) => (v == null ? '' : String(v).trim())).filter(Boolean).join('\n');
-  if (extraBits && $('#qt')) $('#qt').value = extraBits;
+  if (extraBits && $('#qt') && formOn('quote') && !String($('#qt').value || '').trim()) $('#qt').value = extraBits;
   if (f.name || f.phone || f.email || f.address) {
     const acc = document.getElementById('acc-qc');
     if (acc) acc.classList.add('open');
   }
   cs();
   livePrice();
+}
+function emptyChoice(id) {
+  const el = document.getElementById(id);
+  return !el || !String(el.value || '').trim();
+}
+let FILLSR = null, FILLREC = null, FILLNO = false, FILLTICK = null;
+function fillQuote() {
+  const btn = $('#fillbtn');
+  if (FILLSR) { try { FILLSR.stop(); } catch (e) {} return; }
+  if (FILLREC) { try { FILLREC.stop(); } catch (e) {} return; }
+  const existing = ($('#talk') && $('#talk').value || '').trim();
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!existing && SR && !FILLNO) return startQuoteSpeech(SR);
+  if (!existing) return startQuoteAudio();
+  runQuoteFill(existing);
+}
+function startQuoteSpeech(SR) {
+  const btn = $('#fillbtn');
+  const box = $('#talk');
+  let rec;
+  try { rec = new SR(); } catch (e) { rec = null; }
+  if (!rec) return startQuoteAudio();
+  FILLSR = rec;
+  let finalText = '';
+  let interim = '';
+  rec.lang = 'en-US';
+  rec.continuous = true;
+  rec.interimResults = true;
+  rec.onresult = (ev) => {
+    interim = '';
+    for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      const t = ev.results[i][0].transcript;
+      if (ev.results[i].isFinal) finalText += t + ' ';
+      else interim += t;
+    }
+    const heard = (finalText + ' ' + interim).replace(/\s+/g, ' ').trim();
+    if (box) box.value = heard;
+    fillStatus('Heard: ' + heard.slice(-160));
+  };
+  rec.onerror = (ev) => { rec._err = ev.error; if (ev.error === 'not-allowed') toast('Allow the microphone, or type the quote in the box.'); };
+  rec.onend = () => {
+    FILLSR = null;
+    clearInterval(FILLTICK);
+    if (btn) { btn.classList.remove('on'); btn.textContent = 'Fill in the quote'; }
+    const typed = box ? box.value.trim() : '';
+    const said = (finalText + ' ' + interim).replace(/\s+/g, ' ').trim();
+    const text = [said, typed].filter(Boolean).join('\n');
+    if (!text) {
+      if (rec._err && rec._err !== 'no-speech' && rec._err !== 'aborted' && rec._err !== 'not-allowed') {
+        FILLNO = true;
+        fillStatus('Speech recognition is unavailable. Tap again to record, or type the quote.');
+        return;
+      }
+      fillStatus('Nothing heard. Try again, or type the quote in the box.');
+      return;
+    }
+    runQuoteFill(text);
+  };
+  try { rec.start(); } catch (e) { FILLSR = null; return startQuoteAudio(); }
+  if (!FILLSR) return;
+  if (btn) { btn.classList.add('on'); btn.textContent = 'Stop and fill the quote'; }
+  fillStatus('Listening… say the customer, the floor, the price, and anything the crew should know.');
+  const started = Date.now();
+  FILLTICK = setInterval(() => { if (Date.now() - started > 300000 && FILLSR) FILLSR.stop(); }, 1000);
+}
+async function startQuoteAudio() {
+  const btn = $('#fillbtn');
+  const typed = ($('#talk') && $('#talk').value || '').trim();
+  if (!navigator.mediaDevices || !window.MediaRecorder) {
+    if (typed) return runQuoteFill(typed);
+    fillStatus('Recording is not supported here. Type the quote in the box, then tap Fill in the quote.');
+    return;
+  }
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch (e) {
+    if (typed) return runQuoteFill(typed);
+    toast('Allow the microphone, or type the quote in the box.');
+    return;
+  }
+  const kinds = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'];
+  const mt = kinds.find((m) => window.MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) || '';
+  const chunks = [];
+  const rec = new MediaRecorder(stream, mt ? { mimeType: mt } : undefined);
+  FILLREC = rec;
+  rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+  rec.onstop = async () => {
+    stream.getTracks().forEach((t) => t.stop());
+    clearInterval(FILLTICK);
+    FILLREC = null;
+    if (btn) { btn.classList.remove('on'); btn.textContent = 'Fill in the quote'; }
+    const mime = String(rec.mimeType || mt || 'audio/webm').split(';')[0].trim();
+    const blob = new Blob(chunks, { type: mime });
+    if (blob.size < 800) { fillStatus('Nothing recorded. Try again, or type the quote.'); return; }
+    const b64 = await new Promise((resolve) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(String(fr.result).split(',')[1] || '');
+      fr.readAsDataURL(blob);
+    });
+    runQuoteFill(typed, { audio: b64, mime: mime });
+  };
+  rec.start();
+  if (btn) { btn.classList.add('on'); btn.textContent = 'Stop and fill the quote'; }
+  fillStatus('Listening… say the customer, the floor, the price, and anything the crew should know.');
+  const started = Date.now();
+  FILLTICK = setInterval(() => {
+    const s = Math.round((Date.now() - started) / 1000);
+    fillStatus('Recording ' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'));
+    if (s >= 300 && FILLREC) FILLREC.stop();
+  }, 1000);
+}
+function fillStatus(t) {
+  const note = $('#fillnote');
+  if (note) { note.hidden = false; note.textContent = t; }
+}
+async function runQuoteFill(text, extra) {
+  const btn = $('#fillbtn');
+  const spoken = String(text || '').trim();
+  if (!spoken && !(extra && extra.audio)) { fillStatus('Say or type the job in the box above.'); return; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Filling…'; }
+  fillStatus('Filling the quote…');
+  try {
+    const r = await api(Object.assign({ a: 'qfill', pin: ownerPin(), text: spoken }, extra || {}));
+    const fields = r.ready ? (r.fields || {}) : localFillFields(spoken);
+    applyFill(fields);
+    const count = r.ready ? (r.filled || filledCount(fields)) : filledCount(fields);
+    if (count) {
+      const f = fieldVals();
+      IT = SCCQuote.buildItems(f, ($('#qt') && $('#qt').value.trim()) || '');
+      if (IT.length) drawPv();
+    }
+    fillStatus(count ? ('Filled ' + count + ' field' + (count === 1 ? '' : 's') + '. Check everything before you send.') : (r.message || 'AI fill not set up yet'));
+  } catch (e) {
+    const local = localFillFields(spoken);
+    applyFill(local);
+    const n = filledCount(local);
+    if (n) {
+      IT = SCCQuote.buildItems(fieldVals(), ($('#qt') && $('#qt').value.trim()) || '');
+      if (IT.length) drawPv();
+    }
+    fillStatus(n ? ('Filled ' + n + ' field' + (n === 1 ? '' : 's') + '. Check everything before you send.') : (e.message || 'Could not fill that in.'));
+  } finally {
+    if (btn && !FILLSR && !FILLREC) { btn.disabled = false; btn.textContent = 'Fill in the quote'; }
+  }
 }
 function localColor(raw) {
   const m = String(raw || '').match(/\b(?:flake color|color|in)\s+([A-Za-z][A-Za-z]+(?:\s+[A-Za-z]+)?)/i);
@@ -1161,34 +1311,6 @@ function localFillFields(text) {
   const items = SCCQuote.rewriteQuote(raw);
   if (items.length > 1) out.extras = items.slice(1).map((it) => [it.title, it.detail].filter(Boolean).join(' - ')).join('\n');
   return out;
-}
-async function fillQuote() {
-  const text = ($('#talk') && $('#talk').value || '').trim();
-  const note = $('#fillnote');
-  const btn = $('#fillbtn');
-  const show = (t) => { if (note) { note.hidden = false; note.textContent = t; } };
-  if (!text) { show('Say or type the job in the box above.'); return; }
-  if (btn) { btn.disabled = true; btn.textContent = 'Filling…'; }
-  try {
-    const r = await api({ a: 'qfill', pin: ownerPin(), text });
-    const use = (fields, n) => {
-      applyFill(fields);
-      const count = n || filledCount(fields);
-      show(count ? ('Filled ' + count + ' field' + (count === 1 ? '' : 's') + '. Change anything that is off.') : (r.message || 'AI fill not set up yet'));
-    };
-    if (!r.ready) {
-      use(localFillFields(text), 0);
-      return;
-    }
-    use(r.fields || {}, r.filled);
-  } catch (e) {
-    const local = localFillFields(text);
-    applyFill(local);
-    const n = filledCount(local);
-    show(n ? ('Filled ' + n + ' field' + (n === 1 ? '' : 's') + '. Change anything that is off.') : (e.message || 'Could not fill that in.'));
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Fill in the quote'; }
-  }
 }
 function newq(pre) {
   const editing = !!(pre && pre.id);
