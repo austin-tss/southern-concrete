@@ -151,6 +151,10 @@ async function refresh() {
   } catch (e) { toast(e.message); }
 }
 function logout() { sessionStorage.sccRole = ''; role = ''; cur = null; view = ''; CK = ''; PAYING = ''; SQ = ''; render(); }
+function pinLoad(on) {
+  const el = $('#pinload');
+  if (el) el.hidden = !on;
+}
 function shrink(f) {
   return new Promise((res) => {
     const i = new Image();
@@ -325,12 +329,13 @@ function key(k) {
   const dots = $('#dots');
   if (dots) dots.textContent = '•'.repeat(pin.length);
   if (pin.length === 4) {
+    pinLoad(true);
     if (ROLES[pin]) {
       role = sessionStorage.sccRole = ROLES[pin];
       try { api({ a: 'signin', role: role, ua: navigator.userAgent }).catch(function(){}); } catch (e) {}
-      A.innerHTML = '<div class="card">Loading…</div>';
-      refresh().then(render);
+      refresh().then(render).finally(() => pinLoad(false));
     } else {
+      pinLoad(false);
       toast('Wrong PIN');
       pin = '';
       if ($('#dots')) $('#dots').textContent = '';
